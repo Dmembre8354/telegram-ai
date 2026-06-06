@@ -294,25 +294,33 @@ async def handle_message(message: Message):
     if message.text and message.text.startswith('/'):
         return
 
+    # Guard against missing from_user (anonymous channel/admin posts) and messages from bots
+    if not message.from_user or message.from_user.is_bot:
+        return
+
     chat_id = message.chat.id
     user_id = message.from_user.id
     text = message.text or message.caption
 
     is_group = message.chat.type in ("group", "supergroup")
 
-    bot_info = await message.bot.get_me()
-    bot_username = f"@{bot_info.username}"
-
     is_mentioned = False
-    if text and bot_username.lower() in text.lower():
-        is_mentioned = True
-        import re
-        text = re.sub(re.escape(bot_username), "", text, flags=re.IGNORECASE).strip()
-
     is_reply_to_bot = False
-    if message.reply_to_message and message.reply_to_message.from_user:
-        if message.reply_to_message.from_user.id == bot_info.id:
-            is_reply_to_bot = True
+
+    if is_group:
+        bot_info = await message.bot.get_me()
+        bot_username = f"@{bot_info.username}"
+
+        if text:
+            import re
+            pattern = rf"(?i){re.escape(bot_username)}(?![a-zA-Z0-9_])"
+            if re.search(pattern, text):
+                is_mentioned = True
+                text = re.sub(pattern, "", text).strip()
+
+        if message.reply_to_message and message.reply_to_message.from_user:
+            if message.reply_to_message.from_user.id == bot_info.id:
+                is_reply_to_bot = True
 
     # Handle media group (album with multiple photos)
     if message.media_group_id and message.photo:

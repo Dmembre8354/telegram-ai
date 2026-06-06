@@ -99,6 +99,45 @@ async def test_group_filtering():
         assert args[1] == 999    # user_id
         assert args[2] == "Hello  check this"  # stripped text
 
+    # 3b. Test group chat - Partial mention -> should be ignored
+    message_partial_mention = Message(
+        message_id=22,
+        date=datetime.datetime.now(),
+        chat=chat,
+        from_user=user,
+        text="Hello @test_botty check this"
+    )
+    message_partial_mention._bot = mock_bot
+    with patch('handlers._process_message', new_callable=AsyncMock) as mock_process:
+        await handle_message(message_partial_mention)
+        mock_process.assert_not_called()
+
+    # 3c. Test group chat - Anonymous sender (from_user is None) -> should be ignored safely
+    message_anonymous = Message(
+        message_id=23,
+        date=datetime.datetime.now(),
+        chat=chat,
+        text="Hello @test_bot check this"
+    )
+    message_anonymous._bot = mock_bot
+    with patch('handlers._process_message', new_callable=AsyncMock) as mock_process:
+        await handle_message(message_anonymous)
+        mock_process.assert_not_called()
+
+    # 3d. Test group chat - Sender is bot -> should be ignored safely
+    bot_user = User(id=888, is_bot=True, first_name="Other Bot", username="other_bot")
+    message_from_bot = Message(
+        message_id=24,
+        date=datetime.datetime.now(),
+        chat=chat,
+        from_user=bot_user,
+        text="Hello @test_bot check this"
+    )
+    message_from_bot._bot = mock_bot
+    with patch('handlers._process_message', new_callable=AsyncMock) as mock_process:
+        await handle_message(message_from_bot)
+        mock_process.assert_not_called()
+
     # 4. Test group chat - Reply to bot -> should process
     reply_to_user = User(id=12345, is_bot=True, first_name="Test Bot", username="test_bot")
     reply_message = Message(

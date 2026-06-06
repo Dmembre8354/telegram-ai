@@ -19,31 +19,40 @@ async def init_db():
                 user_id INTEGER PRIMARY KEY
             )
         ''')
+
+        # Check if chat_history has old user_id column and rename it to chat_id
+        async with db.execute("PRAGMA table_info(chat_history)") as cursor:
+            columns = await cursor.fetchall()
+            if columns:
+                column_names = [col[1] for col in columns]
+                if "user_id" in column_names and "chat_id" not in column_names:
+                    await db.execute("ALTER TABLE chat_history RENAME COLUMN user_id TO chat_id")
+
         await db.execute('''
             CREATE TABLE IF NOT EXISTS chat_history (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_id INTEGER,
+                chat_id INTEGER,
                 role TEXT,
                 content TEXT
             )
         ''')
         await db.commit()
 
-async def get_history(user_id: int) -> list[dict]:
+async def get_history(chat_id: int) -> list[dict]:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
-        async with db.execute('SELECT role, content FROM chat_history WHERE user_id = ? ORDER BY id ASC', (user_id,)) as cursor:
+        async with db.execute('SELECT role, content FROM chat_history WHERE chat_id = ? ORDER BY id ASC', (chat_id,)) as cursor:
             rows = await cursor.fetchall()
             return [{"role": row["role"], "content": row["content"]} for row in rows]
 
-async def add_message(user_id: int, role: str, content: str):
+async def add_message(chat_id: int, role: str, content: str):
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute('INSERT INTO chat_history (user_id, role, content) VALUES (?, ?, ?)', (user_id, role, content))
+        await db.execute('INSERT INTO chat_history (chat_id, role, content) VALUES (?, ?, ?)', (chat_id, role, content))
         await db.commit()
 
-async def clear_history(user_id: int):
+async def clear_history(chat_id: int):
     async with aiosqlite.connect(DB_PATH) as db:
-        await db.execute('DELETE FROM chat_history WHERE user_id = ?', (user_id,))
+        await db.execute('DELETE FROM chat_history WHERE chat_id = ?', (chat_id,))
         await db.commit()
 
 async def get_user(user_id: int) -> dict:
