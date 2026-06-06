@@ -2,15 +2,36 @@
 
 ## Run without recompiling (quickly)
 up:
-	docker compose up
+	@GEMINI_VAL=$$(grep -E '^GEMINI_API_KEY[[:space:]]*=' .env 2>/dev/null | cut -d= -f2- | tr -d '"'\'' '); \
+	if [ -n "$$GEMINI_VAL" ]; then \
+		echo "Starting only Bot service (using Gemini API)..."; \
+		docker compose up --no-deps bot; \
+	else \
+		echo "Starting Bot and AI Service (using local models)..."; \
+		docker compose up; \
+	fi
 
 ## Rebuild only the changed images and run
 build:
-	DOCKER_BUILDKIT=1 docker compose up --build
+	@GEMINI_VAL=$$(grep -E '^GEMINI_API_KEY[[:space:]]*=' .env 2>/dev/null | cut -d= -f2- | tr -d '"'\'' '); \
+	if [ -n "$$GEMINI_VAL" ]; then \
+		echo "Building and starting only Bot service (using Gemini API)..."; \
+		DOCKER_BUILDKIT=1 docker compose up --build --no-deps bot; \
+	else \
+		echo "Building and starting all services (using local models)..."; \
+		DOCKER_BUILDKIT=1 docker compose up --build; \
+	fi
 
 ## Complete rebuild from scratch (without cache)
 rebuild:
-	DOCKER_BUILDKIT=1 docker compose build --no-cache && docker compose up
+	@GEMINI_VAL=$$(grep -E '^GEMINI_API_KEY[[:space:]]*=' .env 2>/dev/null | cut -d= -f2- | tr -d '"'\'' '); \
+	if [ -n "$$GEMINI_VAL" ]; then \
+		echo "Complete rebuild from scratch (using Gemini API)..."; \
+		DOCKER_BUILDKIT=1 docker compose build --no-cache bot && docker compose up --no-deps bot; \
+	else \
+		echo "Complete rebuild from scratch (using local models)..."; \
+		DOCKER_BUILDKIT=1 docker compose build --no-cache && docker compose up; \
+	fi
 
 down:
 	docker compose down

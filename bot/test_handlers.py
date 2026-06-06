@@ -53,6 +53,9 @@ async def run_tests():
     # 5. Test group filtering
     await test_group_filtering()
 
+    # 6. Test Gemini mode routing
+    await test_gemini_routing()
+
     print("All tests passed!")
 
 async def test_group_filtering():
@@ -164,6 +167,62 @@ async def test_group_filtering():
     with patch('handlers._process_message', new_callable=AsyncMock) as mock_process:
         await handle_message(message_reply)
         mock_process.assert_called_once_with(-1001, 999, "Reply text", [], message_reply)
+
+async def test_gemini_routing():
+    from unittest.mock import AsyncMock, MagicMock, patch
+    import handlers
+    import config
+    from aiogram.types import Chat, User, Message
+    import datetime
+
+    # Mock DB functions
+    with patch('handlers.check_and_consume_quota', new_callable=AsyncMock, return_value=True), \
+         patch('handlers.add_message', new_callable=AsyncMock) as mock_add_message, \
+         patch('handlers.get_history', new_callable=AsyncMock, return_value=[{"role": "user", "content": "Hello"}]) as mock_get_history:
+         
+        # Mock generate_llm_response
+        async def mock_stream(*args, **kwargs):
+            yield "Hello "
+            yield "world!"
+            
+        with patch('handlers.generate_llm_response', side_effect=mock_stream) as mock_generate:
+            # Setup mock message & chat
+            chat = Chat(id=123, type="private")
+            user = User(id=999, is_bot=False, first_name="User", username="test_user")
+            
+            # Setup mock processing message that edit_text calls on
+            mock_processing_msg = AsyncMock()
+            message = Message(
+                message_id=1,
+                date=datetime.datetime.now(),
+                chat=chat,
+                from_user=user,
+                text="Hello bot"
+            )
+            message.answer = AsyncMock(return_value=mock_processing_msg)
+            
+            # Force GEMINI_API_KEY to be set
+            old_key = config.GEMINI_API_KEY
+            config.GEMINI_API_KEY = "mock_key"
+            
+            try:
+                # Call _process_message
+                await handlers._process_message(123, 999, "Hello bot", [], message)
+                
+                # Wait for async background task _run_generation to complete
+                task = handlers._active_tasks.get((123, 999))
+                if task:
+                    await task
+                
+                # Check that generate_llm_response was called
+                mock_generate.assert_called_once()
+                
+                # Check that edit_text was called with parse_mode='HTML'
+                called_args, called_kwargs = mock_processing_msg.edit_text.call_args
+                assert called_kwargs.get("parse_mode") == "HTML", f"Expected parse_mode='HTML', got {called_kwargs.get('parse_mode')}"
+                
+            finally:
+                config.GEMINI_API_KEY = old_key
 
 if __name__ == "__main__":
     asyncio.run(run_tests())
