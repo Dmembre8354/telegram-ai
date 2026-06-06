@@ -24,7 +24,7 @@ class LLMOrchestrator:
             "You can answer any user questions. "
             "If the user sent a photo (the message contains [Photo: ...]), "
             "answer questions about the content of the image fully. "
-            "Always respond in English."
+            "Respond in the same language in which the user wrote the message (e.g., if the user writes in Russian, respond in Russian; if in English, respond in English)."
         )
 
     def load(self):

@@ -371,8 +371,10 @@ async def _process_message(
                 await processing_msg.edit_text(
                     full_text or "Failed to get response.", parse_mode=parse_mode
                 )
-            except TelegramBadRequest:
-                if parse_mode == "HTML":
+            except TelegramBadRequest as e:
+                if "message is not modified" in str(e):
+                    pass
+                elif parse_mode == "HTML":
                     try:
                         await processing_msg.edit_text(
                             full_text or "Failed to get response."
@@ -397,10 +399,15 @@ async def _process_message(
             )
             try:
                 await processing_msg.edit_text(msg_txt, parse_mode=parse_mode)
-            except TelegramBadRequest:
-                try:
-                    await processing_msg.edit_text(msg_txt)
-                except TelegramBadRequest:
+            except TelegramBadRequest as e:
+                if "message is not modified" in str(e):
+                    pass
+                elif parse_mode == "HTML":
+                    try:
+                        await processing_msg.edit_text(msg_txt)
+                    except TelegramBadRequest:
+                        pass
+                else:
                     pass
             if full_text:
                 await add_message(chat_id, "assistant", full_text)
