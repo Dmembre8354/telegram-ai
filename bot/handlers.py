@@ -288,6 +288,8 @@ async def _process_message(chat_id: int, user_id: int, text, images: list, messa
         messages_to_summarize = None
         messages_for_response = messages
 
+    parse_mode = 'HTML' if config.GEMINI_API_KEY else None
+
     if config.GEMINI_API_KEY:
         stream_generator = generate_llm_response(messages_for_response, images=images)
     else:
@@ -302,11 +304,11 @@ async def _process_message(chat_id: int, user_id: int, text, images: list, messa
                 chunk_counter += 1
                 if chunk_counter % 3 == 0:
                     try:
-                        await processing_msg.edit_text(full_text)
+                        await processing_msg.edit_text(full_text, parse_mode=parse_mode)
                     except TelegramBadRequest:
                         pass
             try:
-                await processing_msg.edit_text(full_text or "Failed to get response.")
+                await processing_msg.edit_text(full_text or "Failed to get response.", parse_mode=parse_mode)
             except TelegramBadRequest:
                 pass
 

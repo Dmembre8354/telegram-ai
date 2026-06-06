@@ -75,6 +75,16 @@ async def summarize_history(messages: list[dict]) -> str:
             print(f"Error summarizing history: {e}")
     return ""
 
+SYSTEM_INSTRUCTION = (
+    "You are a helpful and intelligent AI Telegram Agent. "
+    "Always respond in English. "
+    "Use ONLY Telegram HTML formatting for your answers. "
+    "Supported tags are: <b>bold</b>, <i>italic</i>, <u>underline</u>, <s>strikethrough</s>, <code>code</code>, <pre>pre-formatted code block</pre>.\n"
+    "Do not use markdown syntax (such as **, *, __, ```, etc.). "
+    "Do not use HTML tags that are not supported by Telegram (like <h3>, <p>, <ul>, <li>, etc.). Use plain text spacing instead. "
+    "Ensure all HTML tags are correctly opened and closed. Escape any literal < or > characters that are not part of valid tags as &lt; and &gt;."
+)
+
 async def generate_llm_response(messages: list[dict], images: list[bytes] = None):
     """
     Calls the AI service and yields chunks of text as they arrive.
@@ -99,6 +109,9 @@ async def generate_llm_response(messages: list[dict], images: list[bytes] = None
             response = await client.aio.models.generate_content_stream(
                 model=config.GEMINI_MODEL,
                 contents=gemini_messages,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_INSTRUCTION
+                )
             )
             async for chunk in response:
                 if chunk.text:
