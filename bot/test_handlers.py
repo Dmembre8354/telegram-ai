@@ -50,7 +50,120 @@ async def run_tests():
     full_text2 = "".join(chunks2)
     assert "noticed you attached an image" in full_text2
 
+    # 5. Test group filtering
+    await test_group_filtering()
+
     print("All tests passed!")
+
+async def test_group_filtering():
+    from unittest.mock import AsyncMock, MagicMock, patch
+    from handlers import handle_message
+    from aiogram.types import Chat, User, Message
+    import datetime
+
+    # 1. Setup mock bot info
+    import handlers
+    handlers._bot_id = None
+    handlers._bot_username = None
+
+    mock_bot = AsyncMock()
+    mock_bot.id = 12345
+    mock_bot.get_me = AsyncMock(return_value=MagicMock(id=12345, username="test_bot"))
+
+    # 2. Test group chat - No mention, no reply to bot -> should be ignored
+    chat = Chat(id=-1001, type="group")
+    user = User(id=999, is_bot=False, first_name="User", username="test_user")
+    message = Message(
+        message_id=1,
+        date=datetime.datetime.now(),
+        chat=chat,
+        from_user=user,
+        text="Hello world"
+    )
+    message._bot = mock_bot
+
+    with patch('handlers._process_message', new_callable=AsyncMock) as mock_process:
+        await handle_message(message)
+        mock_process.assert_not_called()
+
+    # 3. Test group chat - Mentioned -> should process with stripped text
+    message_mention = Message(
+        message_id=2,
+        date=datetime.datetime.now(),
+        chat=chat,
+        from_user=user,
+        text="Hello @test_bot check this"
+    )
+    message_mention._bot = mock_bot
+    with patch('handlers._process_message', new_callable=AsyncMock) as mock_process:
+        await handle_message(message_mention)
+        mock_process.assert_called_once()
+        args, kwargs = mock_process.call_args
+        assert args[0] == -1001  # chat_id
+        assert args[1] == 999    # user_id
+        assert args[2] == "Hello check this"  # stripped text
+
+    # 3b. Test group chat - Partial mention -> should be ignored
+    message_partial_mention = Message(
+        message_id=22,
+        date=datetime.datetime.now(),
+        chat=chat,
+        from_user=user,
+        text="Hello @test_botty check this"
+    )
+    message_partial_mention._bot = mock_bot
+    with patch('handlers._process_message', new_callable=AsyncMock) as mock_process:
+        await handle_message(message_partial_mention)
+        mock_process.assert_not_called()
+
+    # 3c. Test group chat - Anonymous sender (from_user is None) -> should be ignored safely
+    message_anonymous = Message(
+        message_id=23,
+        date=datetime.datetime.now(),
+        chat=chat,
+        text="Hello @test_bot check this"
+    )
+    message_anonymous._bot = mock_bot
+    with patch('handlers._process_message', new_callable=AsyncMock) as mock_process:
+        await handle_message(message_anonymous)
+        mock_process.assert_not_called()
+
+    # 3d. Test group chat - Sender is bot -> should be ignored safely
+    bot_user = User(id=888, is_bot=True, first_name="Other Bot", username="other_bot")
+    message_from_bot = Message(
+        message_id=24,
+        date=datetime.datetime.now(),
+        chat=chat,
+        from_user=bot_user,
+        text="Hello @test_bot check this"
+    )
+    message_from_bot._bot = mock_bot
+    with patch('handlers._process_message', new_callable=AsyncMock) as mock_process:
+        await handle_message(message_from_bot)
+        mock_process.assert_not_called()
+
+    # 4. Test group chat - Reply to bot -> should process
+    reply_to_user = User(id=12345, is_bot=True, first_name="Test Bot", username="test_bot")
+    reply_message = Message(
+        message_id=3,
+        date=datetime.datetime.now(),
+        chat=chat,
+        from_user=reply_to_user,
+        text="I am bot response"
+    )
+    reply_message._bot = mock_bot
+    message_reply = Message(
+        message_id=4,
+        date=datetime.datetime.now(),
+        chat=chat,
+        from_user=user,
+        text="Reply text",
+        reply_to_message=reply_message
+    )
+    message_reply._bot = mock_bot
+    with patch('handlers._process_message', new_callable=AsyncMock) as mock_process:
+        await handle_message(message_reply)
+        mock_process.assert_called_once_with(-1001, 999, "Reply text", [], message_reply)
 
 if __name__ == "__main__":
     asyncio.run(run_tests())

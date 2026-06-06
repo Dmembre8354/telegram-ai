@@ -5,3 +5,4 @@ model/*
 !model/.gitkeep
 !model/qwen_lora
 .env
+data/bot_db.sqlite3
