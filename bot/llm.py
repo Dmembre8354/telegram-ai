@@ -52,7 +52,7 @@ async def summarize_history(messages: list[dict]) -> str:
                 model=config.GEMINI_MODEL,
                 contents=gemini_messages,
             )
-            return response.text
+            return _extract_text(response)
         except Exception as e:
             print(f"Error summarizing history with Gemini: {e}")
             return ""
@@ -85,6 +85,19 @@ SYSTEM_INSTRUCTION = (
     "Ensure all HTML tags are correctly opened and closed. Escape any literal < or > characters that are not part of valid tags as &lt; and &gt;."
 )
 
+def _extract_text(response_or_chunk) -> str:
+    if not response_or_chunk.candidates:
+        return ""
+    candidate = response_or_chunk.candidates[0]
+    if not candidate.content or not candidate.content.parts:
+        return ""
+    text_parts = []
+    for part in candidate.content.parts:
+        if part.text:
+            text_parts.append(part.text)
+    return "".join(text_parts)
+
+
 async def generate_llm_response(messages: list[dict], images: list[bytes] = None):
     """
     Calls the AI service and yields chunks of text as they arrive.
@@ -114,8 +127,9 @@ async def generate_llm_response(messages: list[dict], images: list[bytes] = None
                 )
             )
             async for chunk in response:
-                if chunk.text:
-                    yield chunk.text
+                text = _extract_text(chunk)
+                if text:
+                    yield text
         except Exception as e:
             print(f"Error connecting to Gemini API: {e}")
             yield "Sorry, an error occurred while connecting to Gemini."
