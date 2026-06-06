@@ -1,0 +1,41 @@
+# Telegram AI Agent Starter Kit Workspace Rules
+
+Guidelines and instructions for the Antigravity Agent when working on this workspace.
+
+## 1. Project Stack & Architecture
+
+- **Telegram Bot (`bot/`)**: Built using `aiogram` (v3.10) and `aiosqlite` for asynchronous SQLite database operations (`data/bot_db.sqlite3`).
+- **AI Inference Service (`ai_service/`)**: Built using `FastAPI` and `uvicorn`. Uses `transformers` (`Qwen/Qwen2.5-0.5B-Instruct` and `Salesforce/blip-image-captioning-large` with `EasyOCR`).
+- **Fine-Tuning (`Dockerfile.train` / `ai_service/train.py`)**: Runs LoRA fine-tuning using `peft` and `trl`.
+
+## 2. Core Rules & Constraints
+
+- **Non-blocking Inference**: 
+  - LLM/VLM/OCR inference runs synchronously and is highly blocking.
+  - **Rule**: Always offload blocking operations to separate threads using `asyncio.to_thread` when calling them from async FastAPI routes or aiogram handlers.
+- **Quota & Payments**:
+  - The default free quota is 5 requests per user per day.
+  - Subscriptions and extra package purchases are handled via **Telegram Stars** (`XTR` currency).
+  - Admins (registered in the `admins` table) have unlimited quota bypass.
+  - **Rule**: Quotas are always tracked individually by `user_id` even in group chats.
+- **Context Isolation & DB Schema**:
+  - Chat history reaches limit at 20 messages. Once reached, the older 10 messages are summarized into a `summary` type role in `chat_history`, and the recent 10 messages are preserved.
+  - **Rule**: Chat history is grouped/isolated by `chat_id` rather than `user_id`. Database queries (`get_history`, `add_message`, `clear_history`) must use `chat_id`.
+  - Database schema includes a `chat_id` column in `chat_history` and an index `idx_chat_history_chat_id` for optimized queries.
+- **Group Chat Support**:
+  - The bot only responds when mentioned (via `@username`) or when a message is a reply to the bot's own message.
+  - In group chats, only group admins or bot global admins are allowed to clear history using the `/new` command.
+  - Active tasks cancellation is managed per chat (`_cancel_all_chat_tasks(chat_id)`) or per user-chat (`_cancel_user_chat_task(chat_id, user_id)`).
+- **Multi-GPU / CPU Support**:
+  - Set `USE_GPU=true` in `.env` to leverage Nvidia GPUs for training/inference.
+
+## 3. Formatting & Code Conventions
+
+- **Language Constraint**:
+  - All user-facing application text, labels, prompt configurations, and responses must be strictly in English.
+- **Database Operations**:
+  - Direct database interaction should go through the wrapper functions in `bot/db.py`.
+  - Always use `aiosqlite` methods asynchronously and ensure commits are made when modifying data.
+- **Telegram UI/UX Updates**:
+  - When updating message text (e.g. streaming chunks), wrap calls in `try/except TelegramBadRequest` to prevent crashes when a user rapidly invokes commands or cancels generation.
+
