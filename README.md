@@ -13,6 +13,7 @@ A customizable, containerized AI-powered Telegram Agent starter kit. This reposi
 - **Multimodal AI**: Leverages `Qwen/Qwen2.5-0.5B-Instruct` for text generation and `Salesforce/blip-image-captioning-large` with `EasyOCR` for image description and text extraction.
 - **Customizable Subscription & Quotas**: Built-in quota manager (5 free requests per day by default) and Telegram Stars payment integration (50 messages, 200 messages, Unlimited month) using SQLite.
 - **Admin System**: Separate administration management commands allowing admin users to bypass quotas.
+- **Group Chat Support**: Ability to participate in group chats. The bot only responds when mentioned (via `@username`) or replied to, using Telegram's Reply feature to quote the original message. Chat history is grouped by `chat_id` for context isolation, while quotas are tracked individually by `user_id`.
 - **LoRA Fine-Tuning**: Built-in script for fine-tuning the base LLM on your own dataset.
 - **Containerized Deployment**: Fully Dockerized setup with single-command startup.
 
@@ -148,9 +149,10 @@ To enable training on Nvidia GPU, set `USE_GPU=true` in your `.env` file.
 
 Here is a list of features planned for future updates. Contributions are welcome!
 
-1. **Ollama Support**: Integrate Ollama to enable parallel request handling instead of sequential Hugging Face processing.
-2. **Group Chat Support**: Add the ability for the bot to participate in group chats and respond when mentioned (e.g., using `@your_bot_username`).
-3. **Multipurpose Media Handling**: Support additional Telegram media formats, such as voice messages (with speech-to-text transcoding) and document attachments.
+- [ ] **Ollama Support**: Integrate Ollama to enable parallel request handling instead of sequential Hugging Face processing.
+- [x] **Group Chat Support**: Add the ability for the bot to participate in group chats and respond when mentioned (e.g., using `@your_bot_username`).
+- [ ] **Multipurpose Media Handling**: Support additional Telegram media formats, such as voice messages (with speech-to-text transcoding) and document attachments.
+- [ ] **MCP Support**: Integrate Model Context Protocol (MCP) to allow the model to call different tools or request information dynamically.
 
 ---
 

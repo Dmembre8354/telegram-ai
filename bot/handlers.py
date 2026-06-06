@@ -17,23 +17,23 @@ _active_tasks: dict[int, asyncio.Task] = {}
 _media_groups: dict[str, dict] = {}
 _media_group_tasks: dict[str, asyncio.Task] = {}
 
-def _cancel_user_task(user_id: int):
-    task = _active_tasks.pop(user_id, None)
+def _cancel_chat_task(chat_id: int):
+    task = _active_tasks.pop(chat_id, None)
     if task and not task.done():
         task.cancel()
 
-async def _compress_history(user_id: int, messages_to_summarize: list, keep_count: int):
+async def _compress_history(chat_id: int, messages_to_summarize: list, keep_count: int):
     """Background task: summarize old messages and compress history after response is delivered."""
     summary = await summarize_history(messages_to_summarize)
     if not summary:
         return
-    current_history = await get_history(user_id)
+    current_history = await get_history(chat_id)
     recent = current_history[-keep_count:] if len(current_history) >= keep_count else current_history
-    await clear_history(user_id)
-    await add_message(user_id, "summary", summary)
+    await clear_history(chat_id)
+    await add_message(chat_id, "summary", summary)
     for msg in recent:
-        await add_message(user_id, msg["role"], msg["content"])
-    print(f"[summary] History compressed for user {user_id}: {len(current_history)} -> {keep_count + 1} messages")
+        await add_message(chat_id, msg["role"], msg["content"])
+    print(f"[summary] History compressed for chat {chat_id}: {len(current_history)} -> {keep_count + 1} messages")
 
 PACKAGES = {
     "buy_50": {"price": 100, "name": "50 messages", "type": "50_messages"},
@@ -43,9 +43,9 @@ PACKAGES = {
 
 @router.message(Command("new"))
 async def cmd_new(message: Message):
-    user_id = message.from_user.id
-    _cancel_user_task(user_id)
-    await clear_history(user_id)
+    chat_id = message.chat.id
+    _cancel_chat_task(chat_id)
+    await clear_history(chat_id)
     await message.answer("New conversation started.")
 
 @router.message(CommandStart())
@@ -190,18 +190,28 @@ async def _handle_media_group(group_id: str):
     _media_group_tasks.pop(group_id, None)
     if not group:
         return
-    await _process_message(group["user_id"], group["text"], group["photos"], group["message"])
+
+    # Check if we should process in group chats
+    message = group["message"]
+    is_group = message.chat.type in ("group", "supergroup")
+    if is_group and not group.get("is_mentioned") and not group.get("is_reply_to_bot"):
+        return
+
+    await _process_message(group["chat_id"], group["user_id"], group["text"], group["photos"], group["message"])
 
 
-async def _process_message(user_id: int, text, images: list, message: Message):
+async def _process_message(chat_id: int, user_id: int, text, images: list, message: Message):
     if not text and not images:
         return
 
     prompt = text or ""
 
+    is_group = message.chat.type in ("group", "supergroup")
+    send_msg = message.reply if is_group else message.answer
+
     has_quota = await check_and_consume_quota(user_id)
     if not has_quota:
-        await message.answer(
+        await send_msg(
             "You have exhausted all available requests.\n"
             "Use /my_plan to view plans or wait until tomorrow."
         )
@@ -209,7 +219,7 @@ async def _process_message(user_id: int, text, images: list, message: Message):
 
     if images:
         status = "Analyzing image..." if len(images) == 1 else f"Analyzing {len(images)} images..."
-        processing_msg = await message.answer(status)
+        processing_msg = await send_msg(status)
         image_description = await analyze_images(images)
         if image_description:
             prompt = f"{text}\n{image_description}" if text else image_description
@@ -220,11 +230,11 @@ async def _process_message(user_id: int, text, images: list, message: Message):
         except TelegramBadRequest:
             pass
     else:
-        processing_msg = await message.answer("Thinking...")
+        processing_msg = await send_msg("Thinking...")
 
-    await add_message(user_id, "user", prompt)
+    await add_message(chat_id, "user", prompt)
 
-    messages = await get_history(user_id)
+    messages = await get_history(chat_id)
 
     needs_summary = len(messages) >= 20
     if needs_summary:
@@ -253,11 +263,11 @@ async def _process_message(user_id: int, text, images: list, message: Message):
             except TelegramBadRequest:
                 pass
 
-            await add_message(user_id, "assistant", full_text)
+            await add_message(chat_id, "assistant", full_text)
 
             if needs_summary and messages_to_summarize:
                 keep_count = len(messages_for_response) + 1
-                asyncio.create_task(_compress_history(user_id, messages_to_summarize, keep_count))
+                asyncio.create_task(_compress_history(chat_id, messages_to_summarize, keep_count))
 
         except asyncio.CancelledError:
             try:
@@ -265,18 +275,18 @@ async def _process_message(user_id: int, text, images: list, message: Message):
             except TelegramBadRequest:
                 pass
             if full_text:
-                await add_message(user_id, "assistant", full_text)
+                await add_message(chat_id, "assistant", full_text)
         except Exception as e:
-            await message.answer("An error occurred while generating response.")
+            await send_msg("An error occurred while generating response.")
             print(f"Error streaming response: {e}")
             if full_text:
-                await add_message(user_id, "assistant", full_text)
+                await add_message(chat_id, "assistant", full_text)
         finally:
-            _active_tasks.pop(user_id, None)
+            _active_tasks.pop(chat_id, None)
 
-    _cancel_user_task(user_id)
+    _cancel_chat_task(chat_id)
     task = asyncio.create_task(_run_generation())
-    _active_tasks[user_id] = task
+    _active_tasks[chat_id] = task
 
 
 @router.message()
@@ -284,8 +294,25 @@ async def handle_message(message: Message):
     if message.text and message.text.startswith('/'):
         return
 
+    chat_id = message.chat.id
     user_id = message.from_user.id
     text = message.text or message.caption
+
+    is_group = message.chat.type in ("group", "supergroup")
+
+    bot_info = await message.bot.get_me()
+    bot_username = f"@{bot_info.username}"
+
+    is_mentioned = False
+    if text and bot_username.lower() in text.lower():
+        is_mentioned = True
+        import re
+        text = re.sub(re.escape(bot_username), "", text, flags=re.IGNORECASE).strip()
+
+    is_reply_to_bot = False
+    if message.reply_to_message and message.reply_to_message.from_user:
+        if message.reply_to_message.from_user.id == bot_info.id:
+            is_reply_to_bot = True
 
     # Handle media group (album with multiple photos)
     if message.media_group_id and message.photo:
@@ -296,10 +323,22 @@ async def handle_message(message: Message):
         image_bytes = file.read()
 
         if group_id not in _media_groups:
-            _media_groups[group_id] = {"user_id": user_id, "text": None, "photos": [], "message": message}
+            _media_groups[group_id] = {
+                "chat_id": chat_id,
+                "user_id": user_id,
+                "text": None,
+                "photos": [],
+                "message": message,
+                "is_mentioned": False,
+                "is_reply_to_bot": False
+            }
         _media_groups[group_id]["photos"].append(image_bytes)
         if text:
             _media_groups[group_id]["text"] = text
+        if is_mentioned:
+            _media_groups[group_id]["is_mentioned"] = True
+        if is_reply_to_bot:
+            _media_groups[group_id]["is_reply_to_bot"] = True
 
         # Restart timer on each new photo to wait for the rest
         if group_id in _media_group_tasks:
@@ -308,6 +347,9 @@ async def handle_message(message: Message):
         return
 
     # Single photo or text-only message
+    if is_group and not is_mentioned and not is_reply_to_bot:
+        return
+
     image_bytes = None
     if message.photo:
         photo = message.photo[-1]
@@ -318,4 +360,4 @@ async def handle_message(message: Message):
     if not text and not image_bytes:
         return
 
-    await _process_message(user_id, text, [image_bytes] if image_bytes else [], message)
+    await _process_message(chat_id, user_id, text, [image_bytes] if image_bytes else [], message)

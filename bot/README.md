@@ -14,6 +14,7 @@ Asynchronous Telegram bot built with `aiogram` v3. Connects to the AI service fo
   - 200 messages — 300 ⭐️
   - Unlimited (1 month) — 500 ⭐️
 - **Admin access** — unlimited usage, no quota
+- **Group Chat Support** — responds to mentions (`@username`) and replies (Reply) in group chats. History is grouped by `chat_id`, and quotas are consumed by `user_id`.
 
 ## Managing Admins
 
