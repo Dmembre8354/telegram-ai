@@ -310,7 +310,13 @@ async def _process_message(chat_id: int, user_id: int, text, images: list, messa
             try:
                 await processing_msg.edit_text(full_text or "Failed to get response.", parse_mode=parse_mode)
             except TelegramBadRequest:
-                pass
+                if parse_mode == 'HTML':
+                    try:
+                        await processing_msg.edit_text(full_text or "Failed to get response.")
+                    except TelegramBadRequest:
+                        pass
+                else:
+                    pass
 
             await add_message(chat_id, "assistant", full_text)
 
@@ -320,9 +326,12 @@ async def _process_message(chat_id: int, user_id: int, text, images: list, messa
 
         except asyncio.CancelledError:
             try:
-                await processing_msg.edit_text(full_text + "\n\n_[Generation cancelled]_" if full_text else "_[Generation cancelled]_")
+                await processing_msg.edit_text(full_text + "\n\n_[Generation cancelled]_" if full_text else "_[Generation cancelled]_", parse_mode=parse_mode)
             except TelegramBadRequest:
-                pass
+                try:
+                    await processing_msg.edit_text(full_text + "\n\n_[Generation cancelled]_" if full_text else "_[Generation cancelled]_")
+                except TelegramBadRequest:
+                    pass
             if full_text:
                 await add_message(chat_id, "assistant", full_text)
         except Exception as e:

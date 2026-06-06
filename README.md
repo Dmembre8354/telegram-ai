@@ -12,7 +12,7 @@ A customizable, containerized AI-powered Telegram Agent starter kit. This reposi
 
 ## Features
 
-- **Hybrid AI Mode (Local / Cloud)**: Seamless failover/switch from local open-source models to Google Gemini. If `GEMINI_API_KEY` is provided, requests are handled by Gemini. If not, the system runs local models.
+- **Hybrid AI Mode (Local / Cloud)**: Seamless hybrid routing to switch from local open-source models to Google Gemini. If `GEMINI_API_KEY` is provided, requests are handled by Gemini. If not, the system runs local models.
 - **Multimodal AI**: Leverages `Qwen/Qwen2.5-0.5B-Instruct` for text generation and `Salesforce/blip-image-captioning-large` with `EasyOCR` for image description and text extraction (when in local mode), or uses Gemini's native multimodal vision capabilities (when in Gemini mode).
 - **Customizable Subscription & Quotas**: Built-in quota manager (5 free requests per day by default) and Telegram Stars payment integration (50 messages, 200 messages, Unlimited month) using SQLite.
 - **Admin System**: Separate administration management commands allowing admin users to bypass quotas.
@@ -100,8 +100,8 @@ make up
 ```
 
 #### Startup Optimization:
-- **With Gemini Mode (`GEMINI_API_KEY` is set)**: Docker Compose will only build and run the `bot` container. The heavy `ai_service` container (FastAPI) and Hugging Face model loading are bypassed, making the bot startup instant and extremely lightweight (highly suitable for weak servers or low-budget VPS hosting).
-- **With Local Mode (`GEMINI_API_KEY` is not set)**: Both the `bot` and `ai_service` containers are started, and the local models are downloaded and preloaded on port `8000`.
+- **With Gemini Mode (`GEMINI_API_KEY` is set)**: Running the app via `Makefile` targets (`make up` / `make build` / `make rebuild`) will automatically build and start only the `bot` container using the `--no-deps` flag. The heavy `ai_service` container and Hugging Face model loading are bypassed, making the bot startup instant and extremely lightweight (highly suitable for weak servers or low-budget VPS hosting). Note that running `docker compose up` directly will still start `ai_service` due to the static `depends_on` link.
+- **With Local Mode (`GEMINI_API_KEY` is not set)**: Running `make up` / `make build` starts both the `bot` and `ai_service` containers, and the local models are downloaded and preloaded on port `8000`.
 
 ---
 
