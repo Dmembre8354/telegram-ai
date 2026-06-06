@@ -1,7 +1,7 @@
 # Telegram AI Agent Starter Kit
 
-[![GitHub stars](https://img.shields.io/github/stars/yourusername/yourrepo?style=social)](https://github.com/yourusername/yourrepo)
-[![GitHub downloads](https://img.shields.io/github/downloads/yourusername/yourrepo/total?logo=github)](https://github.com/yourusername/yourrepo)
+[![GitHub stars](https://img.shields.io/github/stars/br1ge/TelegramAI?style=social)](https://github.com/br1ge/TelegramAI)
+[![GitHub downloads](https://img.shields.io/github/downloads/br1ge/TelegramAI/total?logo=github)](https://github.com/br1ge/TelegramAI)
 
 A customizable, containerized AI-powered Telegram Agent starter kit. This repository provides a complete foundation to build, fine-tune, and deploy your own multimodal AI agent capable of handling text and images.
 
