@@ -11,7 +11,7 @@ logging.basicConfig(level=logging.INFO)
 
 
 async def main():
-    os.makedirs('data', exist_ok=True)
+    os.makedirs("data", exist_ok=True)
     await init_db()
 
     bot = Bot(token=config.TELEGRAM_TOKEN)

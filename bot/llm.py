@@ -11,10 +11,12 @@ AI_SERVICE_URL = os.getenv("AI_SERVICE_URL", "http://localhost:8000")
 
 async def analyze_image(image_bytes: bytes) -> str:
     url = f"{AI_SERVICE_URL}/analyze-image"
-    payload = {"image_base64": base64.b64encode(image_bytes).decode('utf-8')}
+    payload = {"image_base64": base64.b64encode(image_bytes).decode("utf-8")}
     async with aiohttp.ClientSession() as session:
         try:
-            async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=120)) as response:
+            async with session.post(
+                url, json=payload, timeout=aiohttp.ClientTimeout(total=120)
+            ) as response:
                 if response.status == 200:
                     data = await response.json()
                     return data.get("description", "")
@@ -45,9 +47,16 @@ async def summarize_history(messages: list[dict]) -> str:
             for msg in messages:
                 if msg["role"] in ["user", "assistant"]:
                     role = "model" if msg["role"] == "assistant" else "user"
-                    gemini_messages.append({"role": role, "parts": [types.Part.from_text(text=msg["content"])]})
+                    gemini_messages.append(
+                        {
+                            "role": role,
+                            "parts": [types.Part.from_text(text=msg["content"])],
+                        }
+                    )
 
-            prompt_text = "Please provide a concise summary of the above conversation so far."
+            prompt_text = (
+                "Please provide a concise summary of the above conversation so far."
+            )
             prompt = {"role": "user", "parts": [types.Part.from_text(text=prompt_text)]}
             gemini_messages.append(prompt)
 
@@ -70,7 +79,9 @@ async def summarize_history(messages: list[dict]) -> str:
     }
     async with aiohttp.ClientSession() as session:
         try:
-            async with session.post(url, json=payload, timeout=aiohttp.ClientTimeout(total=60)) as response:
+            async with session.post(
+                url, json=payload, timeout=aiohttp.ClientTimeout(total=60)
+            ) as response:
                 if response.status == 200:
                     data = await response.json()
                     return data.get("summary", "")
@@ -125,7 +136,9 @@ async def generate_llm_response(messages: list[dict], images: list[bytes] = None
                 # Attach images to the very last user message
                 if images and i == len(messages) - 1 and role == "user":
                     for img in images:
-                        parts.append(types.Part.from_bytes(data=img, mime_type='image/jpeg'))
+                        parts.append(
+                            types.Part.from_bytes(data=img, mime_type="image/jpeg")
+                        )
 
                 gemini_messages.append({"role": role, "parts": parts})
 
@@ -137,9 +150,7 @@ async def generate_llm_response(messages: list[dict], images: list[bytes] = None
             response = await client.aio.models.generate_content_stream(
                 model=config.GEMINI_MODEL,
                 contents=gemini_messages,
-                config=types.GenerateContentConfig(
-                    system_instruction=sys_inst
-                )
+                config=types.GenerateContentConfig(system_instruction=sys_inst),
             )
             async for chunk in response:
                 text = _extract_text(chunk)
@@ -156,17 +167,14 @@ async def generate_llm_response(messages: list[dict], images: list[bytes] = None
     formatted_messages = []
     for msg in messages:
         if msg["role"] in ["user", "assistant", "summary"]:
-            formatted_messages.append({
-                "role": msg["role"],
-                "content": msg["content"]
-            })
+            formatted_messages.append({"role": msg["role"], "content": msg["content"]})
 
     payload = {
         "messages": formatted_messages,
     }
 
     if images and len(images) > 0:
-        payload["image_base64"] = base64.b64encode(images[0]).decode('utf-8')
+        payload["image_base64"] = base64.b64encode(images[0]).decode("utf-8")
 
     async with aiohttp.ClientSession() as session:
         try:
@@ -177,7 +185,7 @@ async def generate_llm_response(messages: list[dict], images: list[bytes] = None
 
                 async for chunk in response.content.iter_any():
                     if chunk:
-                        yield chunk.decode('utf-8', errors='replace')
+                        yield chunk.decode("utf-8", errors="replace")
         except Exception as e:
             print(f"Error connecting to AI service: {e}")
             yield "Sorry, the AI service is temporarily unavailable."

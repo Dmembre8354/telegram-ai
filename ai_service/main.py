@@ -41,6 +41,7 @@ async def health():
 @app.on_event("startup")
 async def startup_event():
     import os
+
     if os.getenv("GEMINI_API_KEY"):
         print("GEMINI_API_KEY is present. Skipping VLM pre-loading.")
         return
@@ -50,7 +51,9 @@ async def startup_event():
 
 @app.post("/analyze-image")
 async def analyze_image_endpoint(request: AnalyzeImageRequest):
-    description = await asyncio.to_thread(vlm_instance.analyze_image, request.image_base64)
+    description = await asyncio.to_thread(
+        vlm_instance.analyze_image, request.image_base64
+    )
     return {"description": description}
 
 
@@ -59,7 +62,9 @@ async def chat_endpoint(request: ChatRequest):
     image_context = None
     if request.image_base64:
         # Run VLM inference asynchronously to not block
-        image_context = await asyncio.to_thread(vlm_instance.analyze_image, request.image_base64)
+        image_context = await asyncio.to_thread(
+            vlm_instance.analyze_image, request.image_base64
+        )
 
     streamer = llm_orchestrator.generate_stream(request.messages, image_context)
 
@@ -84,6 +89,7 @@ async def chat_endpoint(request: ChatRequest):
 @app.on_event("startup")
 async def startup_event_llm():
     import os
+
     if os.getenv("GEMINI_API_KEY"):
         print("GEMINI_API_KEY is present. Skipping LLM pre-loading.")
         return

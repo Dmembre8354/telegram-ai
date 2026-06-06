@@ -25,11 +25,15 @@ class VisionModelWrapper:
                 self.processor = BlipProcessor.from_pretrained(self.model_id)
                 self.model = BlipForConditionalGeneration.from_pretrained(
                     self.model_id,
-                    torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+                    torch_dtype=(
+                        torch.float16 if torch.cuda.is_available() else torch.float32
+                    ),
                 )
                 self.model.eval()
                 print("Loading OCR model...")
-                self.ocr_reader = easyocr.Reader(['ru', 'en'], gpu=torch.cuda.is_available())
+                self.ocr_reader = easyocr.Reader(
+                    ["ru", "en"], gpu=torch.cuda.is_available()
+                )
                 print("Vision model loaded.")
 
     def analyze_image(self, image_base64: str) -> str:

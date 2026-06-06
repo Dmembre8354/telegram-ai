@@ -4,7 +4,9 @@ from db import add_admin, remove_admin, list_admins
 
 
 async def main():
-    parser = argparse.ArgumentParser(description="Admin management CLI for Telegram Bot")
+    parser = argparse.ArgumentParser(
+        description="Admin management CLI for Telegram Bot"
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     # List command

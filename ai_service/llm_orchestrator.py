@@ -7,7 +7,11 @@ from langchain_core.messages import HumanMessage, AIMessage, SystemMessage
 
 class LLMOrchestrator:
 
-    def __init__(self, base_model_id="Qwen/Qwen2.5-0.5B-Instruct", lora_path="../data/models/qwen_lora"):
+    def __init__(
+        self,
+        base_model_id="Qwen/Qwen2.5-0.5B-Instruct",
+        lora_path="../data/models/qwen_lora",
+    ):
         self.base_model_id = base_model_id
         self.lora_path = lora_path
         self.model = None
@@ -37,9 +41,12 @@ class LLMOrchestrator:
                     dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
                     device_map=device,
                 )
-                self.tokenizer = AutoTokenizer.from_pretrained(self.base_model_id, trust_remote_code=True)
+                self.tokenizer = AutoTokenizer.from_pretrained(
+                    self.base_model_id, trust_remote_code=True
+                )
 
                 import os
+
                 lora_config = os.path.join(self.lora_path, "adapter_config.json")
                 if os.path.exists(lora_config):
                     print(f"Applying LoRA weights from {self.lora_path}...")
@@ -60,14 +67,22 @@ class LLMOrchestrator:
                 conv_text += f"Assistant: {msg.content}\n"
 
         summary_messages = [
-            {"role": "system", "content": "You are an assistant that creates concise conversation summaries."},
-            {"role": "user", "content": (
-                "Create a brief summary of this conversation in English. "
-                "Keep the key questions, facts, and answers:\n\n" + conv_text
-            )},
+            {
+                "role": "system",
+                "content": "You are an assistant that creates concise conversation summaries.",
+            },
+            {
+                "role": "user",
+                "content": (
+                    "Create a brief summary of this conversation in English. "
+                    "Keep the key questions, facts, and answers:\n\n" + conv_text
+                ),
+            },
         ]
 
-        input_text = self.tokenizer.apply_chat_template(summary_messages, tokenize=False, add_generation_prompt=True)
+        input_text = self.tokenizer.apply_chat_template(
+            summary_messages, tokenize=False, add_generation_prompt=True
+        )
         inputs = self.tokenizer([input_text], return_tensors="pt").to(self.model.device)
 
         with torch.no_grad():
@@ -79,7 +94,7 @@ class LLMOrchestrator:
                 pad_token_id=self.tokenizer.eos_token_id,
             )
 
-        new_tokens = output[0][inputs["input_ids"].shape[1]:]
+        new_tokens = output[0][inputs["input_ids"].shape[1] :]
         return self.tokenizer.decode(new_tokens, skip_special_tokens=True).strip()
 
     def generate_stream(self, messages, image_context=None):
@@ -97,7 +112,9 @@ class LLMOrchestrator:
 
         system_content = self.system_prompt
         if summary_text:
-            system_content += f"\n\nSummary of the previous conversation:\n{summary_text}"
+            system_content += (
+                f"\n\nSummary of the previous conversation:\n{summary_text}"
+            )
 
         lc_messages = [SystemMessage(content=system_content)]
 
@@ -120,10 +137,14 @@ class LLMOrchestrator:
             elif isinstance(msg, AIMessage):
                 hf_messages.append({"role": "assistant", "content": msg.content})
 
-        input_text = self.tokenizer.apply_chat_template(hf_messages, tokenize=False, add_generation_prompt=True)
+        input_text = self.tokenizer.apply_chat_template(
+            hf_messages, tokenize=False, add_generation_prompt=True
+        )
         inputs = self.tokenizer([input_text], return_tensors="pt").to(self.model.device)
 
-        streamer = TextIteratorStreamer(self.tokenizer, skip_prompt=True, skip_special_tokens=True)
+        streamer = TextIteratorStreamer(
+            self.tokenizer, skip_prompt=True, skip_special_tokens=True
+        )
 
         generation_kwargs = dict(
             **inputs,
