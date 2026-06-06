@@ -17,8 +17,15 @@ Guidelines and instructions for the Antigravity Agent when working on this works
   - The default free quota is 5 requests per user per day.
   - Subscriptions and extra package purchases are handled via **Telegram Stars** (`XTR` currency).
   - Admins (registered in the `admins` table) have unlimited quota bypass.
-- **Context Compression**:
+  - **Rule**: Quotas are always tracked individually by `user_id` even in group chats.
+- **Context Isolation & DB Schema**:
   - Chat history reaches limit at 20 messages. Once reached, the older 10 messages are summarized into a `summary` type role in `chat_history`, and the recent 10 messages are preserved.
+  - **Rule**: Chat history is grouped/isolated by `chat_id` rather than `user_id`. Database queries (`get_history`, `add_message`, `clear_history`) must use `chat_id`.
+  - Database schema includes a `chat_id` column in `chat_history` and an index `idx_chat_history_chat_id` for optimized queries.
+- **Group Chat Support**:
+  - The bot only responds when mentioned (via `@username`) or when a message is a reply to the bot's own message.
+  - In group chats, only group admins or bot global admins are allowed to clear history using the `/new` command.
+  - Active tasks cancellation is managed per chat (`_cancel_all_chat_tasks(chat_id)`) or per user-chat (`_cancel_user_chat_task(chat_id, user_id)`).
 - **Multi-GPU / CPU Support**:
   - Set `USE_GPU=true` in `.env` to leverage Nvidia GPUs for training/inference.
 
@@ -31,3 +38,4 @@ Guidelines and instructions for the Antigravity Agent when working on this works
   - Always use `aiosqlite` methods asynchronously and ensure commits are made when modifying data.
 - **Telegram UI/UX Updates**:
   - When updating message text (e.g. streaming chunks), wrap calls in `try/except TelegramBadRequest` to prevent crashes when a user rapidly invokes commands or cancels generation.
+
