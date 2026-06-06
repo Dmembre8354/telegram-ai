@@ -105,9 +105,12 @@ async def generate_llm_response(messages: list[dict], images: list[bytes] = None
     if config.GEMINI_API_KEY:
         client = genai.Client(api_key=config.GEMINI_API_KEY)
 
+        summary_content = ""
         gemini_messages = []
         for i, msg in enumerate(messages):
-            if msg["role"] in ["user", "assistant"]:
+            if msg["role"] == "summary":
+                summary_content = msg["content"]
+            elif msg["role"] in ["user", "assistant"]:
                 role = "model" if msg["role"] == "assistant" else "user"
                 parts = [types.Part.from_text(text=msg["content"])]
 
@@ -118,12 +121,16 @@ async def generate_llm_response(messages: list[dict], images: list[bytes] = None
 
                 gemini_messages.append({"role": role, "parts": parts})
 
+        sys_inst = SYSTEM_INSTRUCTION
+        if summary_content:
+            sys_inst += f"\n\nSummary of the previous conversation:\n{summary_content}"
+
         try:
             response = await client.aio.models.generate_content_stream(
                 model=config.GEMINI_MODEL,
                 contents=gemini_messages,
                 config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_INSTRUCTION
+                    system_instruction=sys_inst
                 )
             )
             async for chunk in response:
@@ -140,7 +147,7 @@ async def generate_llm_response(messages: list[dict], images: list[bytes] = None
     # Format messages to match the AI service expected payload
     formatted_messages = []
     for msg in messages:
-        if msg["role"] in ["user", "assistant"]:
+        if msg["role"] in ["user", "assistant", "summary"]:
             formatted_messages.append({
                 "role": msg["role"],
                 "content": msg["content"]
