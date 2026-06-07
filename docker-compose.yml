@@ -1,3 +1,5 @@
+name: telegram-ai-bot
+
 services:
   bot:
     build:
