@@ -17,7 +17,7 @@ Guidelines and instructions for the Antigravity Agent when working on this works
   - **Rule**: System instructions are passed via `GenerateContentConfig(system_instruction=SYSTEM_INSTRUCTION)` to guarantee Telegram-compliant HTML responses (`<b>`, `<i>`, etc.) without markdown.
   - **Rule**: Streaming updates (`edit_text`) must use `parse_mode='HTML'`.
 - **Quota & Payments**:
-  - The default free quota is 5 requests per user per day.
+  - The default free quota is 5 requests per video ad view (Adsgram). If Adsgram is inactive, users can claim 5 free requests manually once per day.
   - Subscriptions and extra package purchases are handled via **Telegram Stars** (`XTR` currency).
   - Admins (registered in the `admins` table) have unlimited quota bypass.
   - **Rule**: Quotas are always tracked individually by `user_id` even in group chats.
@@ -26,9 +26,10 @@ Guidelines and instructions for the Antigravity Agent when working on this works
   - **Rule**: Chat history is grouped/isolated by `chat_id` rather than `user_id`. Database queries (`get_history`, `add_message`, `clear_history`) must use `chat_id`.
   - Database schema includes a `chat_id` column in `chat_history` and an index `idx_chat_history_chat_id` for optimized queries.
 - **Group Chat Support**:
-  - The bot only responds when mentioned (via `@username`) or when a message is a reply to the bot's own message.
-  - In group chats, only group admins or bot global admins are allowed to clear history using the `/new` command.
+  - The bot only responds when explicitly mentioned (via `@username`). Reply-to-bot behavior is disabled to prevent loops.
+  - In group chats, only group admins or bot global admins are allowed to clear history using the `/clear` command.
   - Active tasks cancellation is managed per chat (`_cancel_all_chat_tasks(chat_id)`) or per user-chat (`_cancel_user_chat_task(chat_id, user_id)`).
+
 
 ## 3. Formatting & Code Conventions
 

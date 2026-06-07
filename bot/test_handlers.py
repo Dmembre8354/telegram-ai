@@ -58,6 +58,9 @@ async def run_tests():
     # 6. Test Gemini mode routing
     await test_gemini_routing()
 
+    # 7. Test quota logic
+    await test_quota_logic()
+
     print("All tests passed!")
 
 
@@ -149,7 +152,7 @@ async def test_group_filtering():
         await handle_message(message_from_bot)
         mock_process.assert_not_called()
 
-    # 4. Test group chat - Reply to bot -> should process
+    # 4. Test group chat - Reply to bot -> should NOT process anymore (to prevent loops)
     reply_to_user = User(
         id=12345, is_bot=True, first_name="Test Bot", username="test_bot"
     )
@@ -172,9 +175,7 @@ async def test_group_filtering():
     message_reply._bot = mock_bot
     with patch("handlers._process_message", new_callable=AsyncMock) as mock_process:
         await handle_message(message_reply)
-        mock_process.assert_called_once_with(
-            -1001, 999, "Reply text", [], message_reply
-        )
+        mock_process.assert_not_called()
 
 
 async def test_gemini_routing():
@@ -244,6 +245,113 @@ async def test_gemini_routing():
 
             finally:
                 config.GEMINI_API_KEY = old_key
+
+
+async def test_quota_logic():
+    import aiosqlite
+    from db import (
+        check_and_consume_quota,
+        add_reward_quota,
+        claim_free_daily_quota,
+        get_user,
+        grant_package,
+        DB_PATH,
+    )
+
+    test_user_id = 11111
+
+    # Reset user state in DB
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM users WHERE user_id = ?", (test_user_id,))
+        await db.commit()
+
+    # 1. Initially user should have no quota
+    has_quota = await check_and_consume_quota(test_user_id)
+    assert not has_quota, "User should not have quota initially"
+
+    # 2. Add reward quota (Adsgram)
+    await add_reward_quota(test_user_id, 5)
+    user = await get_user(test_user_id)
+    assert (
+        user["ad_messages_remaining"] == 5
+    ), f"Expected 5 ad messages, got {user['ad_messages_remaining']}"
+
+    # 3. Consume reward quota
+    has_quota = await check_and_consume_quota(test_user_id)
+    assert has_quota, "User should have quota after reward"
+    user = await get_user(test_user_id)
+    assert (
+        user["ad_messages_remaining"] == 4
+    ), f"Expected 4 ad messages, got {user['ad_messages_remaining']}"
+
+    # 4. Daily free claim
+    # Reset user state again
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM users WHERE user_id = ?", (test_user_id,))
+        await db.commit()
+
+    success = await claim_free_daily_quota(test_user_id)
+    assert success, "First daily free claim should succeed"
+    user = await get_user(test_user_id)
+    assert (
+        user["ad_messages_remaining"] == 5
+    ), f"Expected 5 ad messages after free claim, got {user['ad_messages_remaining']}"
+
+    # Attempt to claim again on the same day - should fail
+    success_retry = await claim_free_daily_quota(test_user_id)
+    assert not success_retry, "Subsequent daily free claim on the same day should fail"
+
+    # 5. Precedence: bought messages first, then ad_messages_remaining
+    # Reset user state
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM users WHERE user_id = ?", (test_user_id,))
+        await db.commit()
+
+    # Grant package of 50 messages (bought messages)
+    await grant_package(test_user_id, "50_messages")
+    # Add ad messages
+    await add_reward_quota(test_user_id, 3)
+
+    user = await get_user(test_user_id)
+    assert (
+        user["messages_bought"] == 50
+    ), f"Expected 50 bought messages, got {user['messages_bought']}"
+    assert (
+        user["ad_messages_remaining"] == 3
+    ), f"Expected 3 ad messages, got {user['ad_messages_remaining']}"
+
+    # Consume quota - should decrement messages_bought
+    has_quota = await check_and_consume_quota(test_user_id)
+    assert has_quota
+    user = await get_user(test_user_id)
+    assert (
+        user["messages_bought"] == 49
+    ), f"Expected 49 bought messages, got {user['messages_bought']}"
+    assert (
+        user["ad_messages_remaining"] == 3
+    ), f"Expected 3 ad messages to be intact, got {user['ad_messages_remaining']}"
+
+    # 6. Test callback guard when Adsgram is active
+    from unittest.mock import AsyncMock, MagicMock
+    from handlers import process_free_requests_callback
+    import config
+
+    old_adsgram_active = config.IS_ADSGRAM_ACTIVE
+    config.IS_ADSGRAM_ACTIVE = True
+
+    try:
+        mock_callback = AsyncMock()
+        mock_callback.from_user = MagicMock(id=test_user_id)
+        mock_callback.answer = AsyncMock()
+
+        await process_free_requests_callback(mock_callback)
+
+        mock_callback.answer.assert_called_once_with(
+            "⚠️ Free daily claims are only available when Adsgram is inactive.",
+            show_alert=True,
+        )
+    finally:
+        config.IS_ADSGRAM_ACTIVE = old_adsgram_active
 
 
 if __name__ == "__main__":

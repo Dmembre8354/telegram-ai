@@ -7,3 +7,7 @@ services:
       - .env
     volumes:
       - ./data:/app/bot/data
+    ports:
+      - "127.0.0.1:${PORT:-8080}:${PORT:-8080}"
+
+

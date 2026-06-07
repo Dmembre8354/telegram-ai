@@ -7,14 +7,16 @@ Asynchronous Telegram bot built with `aiogram` v3. Connects to the AI service fo
 - **Streaming responses** — text appears in real time
 - **Image analysis** — send a photo, the bot reads text (OCR) and describes it
 - **Chat history** — context preserved across messages, auto-summarized after 20 messages
-- **`/new`** — start a new conversation (clears history)
+- **`/clear`** — clear conversation history
 - **Quota system:**
-  - 5 free messages per day
+  - Adsgram video ads for unlimited free requests
+  - Fallback to 5 free requests once per day if Adsgram is inactive
   - 50 messages — 100 ⭐️
   - 200 messages — 300 ⭐️
   - Unlimited (1 month) — 500 ⭐️
 - **Admin access** — unlimited usage, no quota
-- **Group Chat Support** — responds to mentions (`@username`) and replies (Reply) in group chats. History is grouped by `chat_id`, and quotas are consumed by `user_id`.
+- **Group Chat Support** — responds only to mentions (`@username`) in group chats. History is grouped by `chat_id`, and quotas are consumed by `user_id`.
+
 
 ## Managing Admins
 

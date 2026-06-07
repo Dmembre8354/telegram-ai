@@ -8,9 +8,12 @@ from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     CallbackQuery,
+    WebAppInfo,
 )
 from aiogram.filters import CommandStart, Command
 from aiogram.exceptions import TelegramBadRequest
+import config
+
 
 from db import (
     check_and_consume_quota,
@@ -94,8 +97,76 @@ PACKAGES = {
 }
 
 
-@router.message(Command("new"))
-async def cmd_new(message: Message):
+def get_pricing_keyboard(user_id: int, user: dict) -> InlineKeyboardMarkup:
+    keyboard_rows = []
+    if config.IS_ADSGRAM_ACTIVE:
+        keyboard_rows.append(
+            [
+                InlineKeyboardButton(
+                    text="🎬 Watch Ad (+5 requests)",
+                    web_app=WebAppInfo(url=f"{config.BASE_URL}/ad?user_id={user_id}"),
+                )
+            ]
+        )
+    else:
+        keyboard_rows.append(
+            [
+                InlineKeyboardButton(
+                    text="🎬 Get 5 free requests",
+                    callback_data="get_free_requests",
+                )
+            ]
+        )
+
+    keyboard_rows.extend(
+        [
+            [InlineKeyboardButton(text="50 messages — 100 ⭐️", callback_data="buy_50")],
+            [
+                InlineKeyboardButton(
+                    text="200 messages — 300 ⭐️", callback_data="buy_200"
+                )
+            ],
+        ]
+    )
+
+    if user["messages_bought"] == 0:
+        keyboard_rows.append(
+            [
+                InlineKeyboardButton(
+                    text="Unlimited (1 month) — 500 ⭐️", callback_data="buy_unlimited"
+                )
+            ]
+        )
+    return InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
+
+
+@router.callback_query(F.data == "get_free_requests")
+async def process_free_requests_callback(callback: CallbackQuery):
+    if config.IS_ADSGRAM_ACTIVE:
+        await callback.answer(
+            "⚠️ Free daily claims are only available when Adsgram is inactive.",
+            show_alert=True,
+        )
+        return
+
+    user_id = callback.from_user.id
+    from db import claim_free_daily_quota
+
+    success = await claim_free_daily_quota(user_id)
+    if success:
+        await callback.message.answer(
+            "🎉 5 free requests have been added to your balance! Come back tomorrow for more."
+        )
+    else:
+        await callback.message.answer(
+            "⚠️ You have already claimed your free daily requests today. "
+            "Please come back tomorrow or purchase a package."
+        )
+    await callback.answer()
+
+
+@router.message(Command("clear"))
+async def cmd_clear(message: Message):
     if not message.from_user:
         return
 
@@ -119,7 +190,7 @@ async def cmd_new(message: Message):
 
     _cancel_all_chat_tasks(chat_id)
     await clear_history(chat_id)
-    await message.answer("New conversation started.")
+    await message.answer("Conversation history cleared.")
 
 
 @router.message(CommandStart())
@@ -149,11 +220,18 @@ async def cmd_start(message: Message):
             f"You have an active unlimited subscription until {formatted_date} 23:59."
         )
     else:
-        await message.answer(
-            "Welcome! I am AI Agent.\n\n"
-            "You have 5 free messages per day.\n"
-            "Use /my_plan to view plans and purchase additional requests."
-        )
+        if config.IS_ADSGRAM_ACTIVE:
+            await message.answer(
+                "Welcome! I am AI Agent.\n\n"
+                "You can watch ads to get 5 free requests per view.\n"
+                "Use /my_plan to view plans and get additional requests."
+            )
+        else:
+            await message.answer(
+                "Welcome! I am AI Agent.\n\n"
+                "You can claim 5 free daily requests.\n"
+                "Use /my_plan to view plans and get additional requests."
+            )
 
 
 @router.message(Command("my_plan"))
@@ -171,13 +249,11 @@ async def cmd_my_plan(message: Message):
         return
 
     user = await get_user(user_id)
-    today = datetime.date.today()
-    today_str = today.isoformat()
 
     # Active unlimited subscription - do not show prices
     if user["unlimited_until"]:
         unlimited_until_date = datetime.date.fromisoformat(user["unlimited_until"])
-        if today <= unlimited_until_date:
+        if datetime.date.today() <= unlimited_until_date:
             formatted_date = unlimited_until_date.strftime("%d.%m.%Y")
             await message.answer(
                 "📋 Your Plan\n\n"
@@ -186,33 +262,24 @@ async def cmd_my_plan(message: Message):
             )
             return
 
-    # Count remaining free messages for today
-    if user["last_free_date"] == today_str:
-        free_remaining = max(0, 5 - user["free_messages_used_today"])
-    else:
-        free_remaining = 5
-
+    total = user["messages_bought"] + user.get("ad_messages_remaining", 0)
     lines = ["📋 Your Plan\n"]
-    if user["messages_bought"] > 0:
-        lines.append(f"💬 Paid messages remaining: {user['messages_bought']}")
-    lines.append(f"🆓 Free messages today: {free_remaining} of 5")
-    lines.append("\n💳 Choose a package to purchase with Telegram Stars:")
-
-    # If the user has paid messages, hide the unlimited option
-    keyboard_rows = [
-        [InlineKeyboardButton(text="50 messages — 100 ⭐️", callback_data="buy_50")],
-        [InlineKeyboardButton(text="200 messages — 300 ⭐️", callback_data="buy_200")],
-    ]
-    if user["messages_bought"] == 0:
-        keyboard_rows.append(
-            [
-                InlineKeyboardButton(
-                    text="Unlimited (1 month) — 500 ⭐️", callback_data="buy_unlimited"
-                )
-            ]
+    lines.append(f"💬 Messages remaining: {total}")
+    if total > 0:
+        breakdown = []
+        if user["messages_bought"] > 0:
+            breakdown.append(f"{user['messages_bought']} paid")
+        if user.get("ad_messages_remaining", 0) > 0:
+            breakdown.append(f"{user['ad_messages_remaining']} free")
+        lines.append(f"({', '.join(breakdown)})")
+    if config.IS_ADSGRAM_ACTIVE:
+        lines.append(
+            "\n🎬 Watch ads to get 5 free requests per view, or purchase a package:"
         )
+    else:
+        lines.append("\n🎬 Claim 5 free requests once per day, or purchase a package:")
 
-    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
+    keyboard = get_pricing_keyboard(user_id, user)
     await message.answer("\n".join(lines), reply_markup=keyboard)
 
 
@@ -281,7 +348,7 @@ async def _handle_media_group(group_id: str):
     # Check if we should process in group chats
     message = group["message"]
     is_group = message.chat.type in ("group", "supergroup")
-    if is_group and not group.get("is_mentioned") and not group.get("is_reply_to_bot"):
+    if is_group and not group.get("is_mentioned"):
         return
 
     await _process_message(
@@ -306,10 +373,34 @@ async def _process_message(
 
     has_quota = await check_and_consume_quota(user_id)
     if not has_quota:
-        await send_msg(
-            "You have exhausted all available requests.\n"
-            "Use /my_plan to view plans or wait until tomorrow."
+        user = await get_user(user_id)
+        keyboard = get_pricing_keyboard(user_id, user)
+        ad_or_free_text = (
+            "Please watch an ad to get 5 free requests, or purchase a package below."
+            if config.IS_ADSGRAM_ACTIVE
+            else "Please claim 5 free daily requests, or purchase a package below."
         )
+        if is_group:
+            try:
+                await message.bot.send_message(
+                    chat_id=user_id,
+                    text=(
+                        f"You have exhausted all available requests.\n"
+                        f"{ad_or_free_text}"
+                    ),
+                    reply_markup=keyboard,
+                )
+            except Exception:
+                _, bot_username = await _get_bot_info(message.bot)
+                await message.reply(
+                    f"Please start a private chat with me (@{bot_username}) first "
+                    "so I can send you options to get more requests."
+                )
+        else:
+            await send_msg(
+                f"You have exhausted all available requests.\n" f"{ad_or_free_text}",
+                reply_markup=keyboard,
+            )
         return
 
     if images:
@@ -419,7 +510,6 @@ async def handle_message(message: Message):
     is_group = message.chat.type in ("group", "supergroup")
 
     is_mentioned = False
-    is_reply_to_bot = False
 
     if is_group:
         bot_id, bot_username_raw = await _get_bot_info(message.bot)
@@ -433,10 +523,6 @@ async def handle_message(message: Message):
                 is_mentioned = True
                 text = re.sub(pattern, "", text)
                 text = re.sub(r"\s+", " ", text).strip()
-
-        if message.reply_to_message and message.reply_to_message.from_user:
-            if message.reply_to_message.from_user.id == bot_id:
-                is_reply_to_bot = True
 
     # Handle media group (album with multiple photos)
     if message.media_group_id and message.photo:
@@ -454,15 +540,12 @@ async def handle_message(message: Message):
                 "photos": [],
                 "message": message,
                 "is_mentioned": False,
-                "is_reply_to_bot": False,
             }
         _media_groups[group_id]["photos"].append(image_bytes)
         if text:
             _media_groups[group_id]["text"] = text
         if is_mentioned:
             _media_groups[group_id]["is_mentioned"] = True
-        if is_reply_to_bot:
-            _media_groups[group_id]["is_reply_to_bot"] = True
 
         # Restart timer on each new photo to wait for the rest
         if group_id in _media_group_tasks:
@@ -473,7 +556,7 @@ async def handle_message(message: Message):
         return
 
     # Single photo or text-only message
-    if is_group and not is_mentioned and not is_reply_to_bot:
+    if is_group and not is_mentioned:
         return
 
     image_bytes = None
