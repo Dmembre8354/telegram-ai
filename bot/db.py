@@ -13,10 +13,22 @@ async def init_db():
                 free_messages_used_today INTEGER DEFAULT 0,
                 last_free_date TEXT,
                 messages_bought INTEGER DEFAULT 0,
-                unlimited_until TEXT
+                unlimited_until TEXT,
+                ad_messages_remaining INTEGER DEFAULT 0
             )
         """
         )
+
+        # Check if users has ad_messages_remaining column
+        async with db.execute("PRAGMA table_info(users)") as cursor:
+            columns = await cursor.fetchall()
+            if columns:
+                column_names = [col[1] for col in columns]
+                if "ad_messages_remaining" not in column_names:
+                    await db.execute(
+                        "ALTER TABLE users ADD COLUMN ad_messages_remaining INTEGER DEFAULT 0"
+                    )
+
         await db.execute(
             """
             CREATE TABLE IF NOT EXISTS admins (
@@ -117,13 +129,27 @@ async def check_and_consume_quota(user_id: int) -> bool:
         if datetime.date.today() <= unlimited_until_date:
             return True
 
-    # Check bought messages
+    # Check bought messages first
     if user["messages_bought"] > 0:
         async with aiosqlite.connect(DB_PATH) as db:
             await db.execute(
                 """
                 UPDATE users
                 SET messages_bought = messages_bought - 1
+                WHERE user_id = ?
+            """,
+                (user_id,),
+            )
+            await db.commit()
+        return True
+
+    # Check ad messages next
+    if user.get("ad_messages_remaining", 0) > 0:
+        async with aiosqlite.connect(DB_PATH) as db:
+            await db.execute(
+                """
+                UPDATE users
+                SET ad_messages_remaining = ad_messages_remaining - 1
                 WHERE user_id = ?
             """,
                 (user_id,),
@@ -140,12 +166,31 @@ async def add_reward_quota(user_id: int, count: int = 5):
         await db.execute(
             """
             UPDATE users
-            SET messages_bought = messages_bought + ?
+            SET ad_messages_remaining = ad_messages_remaining + ?
             WHERE user_id = ?
         """,
             (count, user_id),
         )
         await db.commit()
+
+
+async def claim_free_daily_quota(user_id: int) -> bool:
+    today_str = datetime.date.today().isoformat()
+    user = await get_user(user_id)
+    if user.get("last_free_date") == today_str:
+        return False
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """
+            UPDATE users
+            SET last_free_date = ?, ad_messages_remaining = ad_messages_remaining + 5
+            WHERE user_id = ?
+        """,
+            (today_str, user_id),
+        )
+        await db.commit()
+    return True
 
 
 async def grant_package(user_id: int, package_type: str):

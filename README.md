@@ -10,9 +10,9 @@ A customizable, containerized AI-powered Telegram Agent starter kit. This reposi
 
 - **Gemini API Integration**: Native integration with Google Gemini models using the modern `google-genai` Python SDK.
 - **Multimodal capabilities**: Easily handles both text prompts and images (single or media group albums) using Gemini's native vision capabilities.
-- **Customizable Subscription & Quotas**: Built-in quota manager (5 free requests per day by default) and Telegram Stars payment integration (50 messages, 200 messages, Unlimited month) using SQLite.
+- **Customizable Subscription & Quotas**: Built-in quota manager (Adsgram video ads for unlimited free requests, fallback to 5 free requests once per day, and Telegram Stars packages) using SQLite.
 - **Admin System**: Separate administration management commands allowing admin users to bypass quotas.
-- **Group Chat Support**: Participate in group chats. The bot only responds when mentioned (via `@username`) or replied to, using Telegram's Reply feature to quote the original message. Chat history is grouped by `chat_id` for context isolation, while quotas are tracked individually by `user_id`.
+- **Group Chat Support**: Participate in group chats. The bot only responds when mentioned (via `@username`). Chat history is grouped by `chat_id` for context isolation, while quotas are tracked individually by `user_id`.
 - **Ultra-lightweight Containerized Deployment**: Fully Dockerized setup. Only the bot service is launched, consuming minimal system resources and memory. Extremely suitable for weak servers or low-budget VPS hosting.
 
 ---
@@ -98,7 +98,7 @@ All infrastructure operations are automated through `Makefile` commands:
 
 By default, the application implements the following plans:
 
-- **Free Tier**: Watch a short video advertisement (Adsgram Integration) to get **5 free requests** (unlimited views allowed).
+- **Free Tier**: Watch a short video advertisement (Adsgram Integration) to get **5 free requests** (unlimited views allowed), or claim **5 free requests** once per day via manual click if Adsgram is inactive.
 - **50 Messages**: 100 ⭐️ (Telegram Stars).
 - **200 Messages**: 300 ⭐️ (Telegram Stars).
 - **Unlimited (1 month)**: 500 ⭐️ (Telegram Stars).

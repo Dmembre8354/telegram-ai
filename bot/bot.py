@@ -25,6 +25,10 @@ async def handle_ad(request):
 
 
 async def handle_reward(request):
+    secret = request.query.get("secret")
+    if not config.ADSGRAM_SECRET or secret != config.ADSGRAM_SECRET:
+        return web.Response(text="Unauthorized", status=401)
+
     userid_str = request.query.get("userid")
     if not userid_str:
         return web.Response(text="Missing userid parameter", status=400)

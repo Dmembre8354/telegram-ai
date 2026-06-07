@@ -29,21 +29,24 @@ This guide explains how to register on Adsgram, create an Ad Block, set up Serve
 
 ## 3. Configuring the Reward URL (S2S Callback)
 
-To securely credit users after they finish watching an ad, Adsgram uses a Server-to-Server (S2S) Callback.
+To securely credit users after they finish watching an ad, Adsgram uses a Server-to-Server (S2S) Callback. To prevent unauthorized requests from minting quota, you must use a shared secret token.
 
-1. Go to your Ad Block settings in the Adsgram dashboard.
-2. Find the **Reward URL** (or callback URL) field.
-3. Enter your public HTTPS URL utilizing the exact `[userId]` placeholder:
+1. **Generate a Shared Secret**: Create a random secure string of your choice (e.g., `my_secure_token_123`).
+2. Go to your Ad Block settings in the Adsgram dashboard.
+3. Find the **Reward URL** (or callback URL) field.
+4. Enter your public HTTPS URL including both the `[userId]` placeholder and your custom secret token:
    ```
-   https://your-domain.com/reward?userid=[userId]
+   https://your-domain.com/reward?userid=[userId]&secret=YOUR_SHARED_SECRET
    ```
-   *Note: Adsgram will replace `[userId]` with the actual Telegram User ID of the user who completed watching the ad (e.g., `https://your-domain.com/reward?userid=123456789`).*
+   *(Replace `YOUR_SHARED_SECRET` with the exact string you generated in step 1).*
+5. When a reward event occurs, Adsgram will invoke this endpoint, replacing `[userId]` with the Telegram ID but keeping your secret query parameter intact.
+
 
 ---
 
 ## 4. Bot Web Server Configuration
 
-Update your `.env` configuration with the public base URL and the port on which your bot's web server will run:
+Update your `.env` configuration with the public base URL, local port, and your generated shared secret:
 
 ```env
 # The public HTTPS URL of your server
@@ -51,7 +54,11 @@ BASE_URL="https://your-domain.com"
 
 # The port where the python web server will bind locally
 PORT=8080
+
+# The shared secret token for verifying S2S callbacks
+ADSGRAM_SECRET="YOUR_SHARED_SECRET"
 ```
+
 
 ---
 
@@ -115,10 +122,11 @@ server {
 ## 6. Testing the Setup
 
 ### Test the Reward Endpoint:
-You can simulate an Adsgram callback request using `curl`:
+You can simulate a verified Adsgram callback request using `curl`:
 ```bash
-curl "https://your-domain.com/reward?userid=YOUR_TELEGRAM_USER_ID"
+curl "https://your-domain.com/reward?userid=YOUR_TELEGRAM_USER_ID&secret=YOUR_SHARED_SECRET"
 ```
 If successful, your bot should immediately send a Telegram message to your account saying:
 `🎉 You have successfully watched the ad! 5 requests have been added to your balance.`
 And your balance will be increased by 5 requests (verify by calling `/my_plan` in the bot).
+

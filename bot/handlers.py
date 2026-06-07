@@ -143,10 +143,18 @@ def get_pricing_keyboard(user_id: int, user: dict) -> InlineKeyboardMarkup:
 @router.callback_query(F.data == "get_free_requests")
 async def process_free_requests_callback(callback: CallbackQuery):
     user_id = callback.from_user.id
-    from db import add_reward_quota
+    from db import claim_free_daily_quota
 
-    await add_reward_quota(user_id, 5)
-    await callback.message.answer("🎉 5 requests have been added to your balance!")
+    success = await claim_free_daily_quota(user_id)
+    if success:
+        await callback.message.answer(
+            "🎉 5 free requests have been added to your balance! Come back tomorrow for more."
+        )
+    else:
+        await callback.message.answer(
+            "⚠️ You have already claimed your free daily requests today. "
+            "Please come back tomorrow or purchase a package."
+        )
     await callback.answer()
 
 

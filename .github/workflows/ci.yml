@@ -45,6 +45,8 @@ jobs:
           echo "ADSGRAM_BLOCK_ID=bot-34368" >> .env
           echo "BASE_URL=https://your-domain.com" >> .env
           echo "PORT=8080" >> .env
+          echo "ADSGRAM_SECRET=mock_secret" >> .env
+
 
 
       - name: Build Docker images
