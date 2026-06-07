@@ -360,7 +360,8 @@ async def cmd_my_plan(message: Message):
             breakdown.append(f"{user['messages_bought']} paid")
         if user.get("ad_messages_remaining", 0) > 0:
             breakdown.append(f"{user['ad_messages_remaining']} free")
-        lines.append(f"({', '.join(breakdown)})")
+        if len(breakdown) > 1:
+            lines.append(f"({', '.join(breakdown)})")
     if config.IS_ADSGRAM_ACTIVE:
         lines.append(
             "\n🎬 Watch ads to get 5 free requests per view, or purchase a package:"
