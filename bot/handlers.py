@@ -142,6 +142,13 @@ def get_pricing_keyboard(user_id: int, user: dict) -> InlineKeyboardMarkup:
 
 @router.callback_query(F.data == "get_free_requests")
 async def process_free_requests_callback(callback: CallbackQuery):
+    if config.IS_ADSGRAM_ACTIVE:
+        await callback.answer(
+            "⚠️ Free daily claims are only available when Adsgram is inactive.",
+            show_alert=True,
+        )
+        return
+
     user_id = callback.from_user.id
     from db import claim_free_daily_quota
 
@@ -255,11 +262,16 @@ async def cmd_my_plan(message: Message):
             )
             return
 
+    total = user["messages_bought"] + user.get("ad_messages_remaining", 0)
     lines = ["📋 Your Plan\n"]
-    if user["messages_bought"] > 0:
-        lines.append(f"💬 Messages remaining: {user['messages_bought']}")
-    else:
-        lines.append("💬 Messages remaining: 0")
+    lines.append(f"💬 Messages remaining: {total}")
+    if total > 0:
+        breakdown = []
+        if user["messages_bought"] > 0:
+            breakdown.append(f"{user['messages_bought']} paid")
+        if user.get("ad_messages_remaining", 0) > 0:
+            breakdown.append(f"{user['ad_messages_remaining']} free")
+        lines.append(f"({', '.join(breakdown)})")
     if config.IS_ADSGRAM_ACTIVE:
         lines.append(
             "\n🎬 Watch ads to get 5 free requests per view, or purchase a package:"

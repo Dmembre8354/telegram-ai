@@ -111,6 +111,9 @@ server {
         proxy_set_header X-Real-IP $remote_addr;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Disable access logging to prevent leaking the shared secret token in Nginx logs
+        access_log off;
     }
 }
 ```

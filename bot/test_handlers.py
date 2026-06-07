@@ -330,6 +330,28 @@ async def test_quota_logic():
         user["ad_messages_remaining"] == 3
     ), f"Expected 3 ad messages to be intact, got {user['ad_messages_remaining']}"
 
+    # 6. Test callback guard when Adsgram is active
+    from unittest.mock import AsyncMock, MagicMock
+    from handlers import process_free_requests_callback
+    import config
+
+    old_adsgram_active = config.IS_ADSGRAM_ACTIVE
+    config.IS_ADSGRAM_ACTIVE = True
+
+    try:
+        mock_callback = AsyncMock()
+        mock_callback.from_user = MagicMock(id=test_user_id)
+        mock_callback.answer = AsyncMock()
+
+        await process_free_requests_callback(mock_callback)
+
+        mock_callback.answer.assert_called_once_with(
+            "⚠️ Free daily claims are only available when Adsgram is inactive.",
+            show_alert=True,
+        )
+    finally:
+        config.IS_ADSGRAM_ACTIVE = old_adsgram_active
+
 
 if __name__ == "__main__":
     asyncio.run(run_tests())

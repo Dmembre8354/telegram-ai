@@ -129,33 +129,33 @@ async def check_and_consume_quota(user_id: int) -> bool:
         if datetime.date.today() <= unlimited_until_date:
             return True
 
-    # Check bought messages first
-    if user["messages_bought"] > 0:
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                """
-                UPDATE users
-                SET messages_bought = messages_bought - 1
-                WHERE user_id = ?
-            """,
-                (user_id,),
-            )
-            await db.commit()
-        return True
+    # Atomic decrement for bought messages first
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            """
+            UPDATE users
+            SET messages_bought = messages_bought - 1
+            WHERE user_id = ? AND messages_bought > 0
+        """,
+            (user_id,),
+        ) as cursor:
+            if cursor.rowcount > 0:
+                await db.commit()
+                return True
 
-    # Check ad messages next
-    if user.get("ad_messages_remaining", 0) > 0:
-        async with aiosqlite.connect(DB_PATH) as db:
-            await db.execute(
-                """
-                UPDATE users
-                SET ad_messages_remaining = ad_messages_remaining - 1
-                WHERE user_id = ?
-            """,
-                (user_id,),
-            )
-            await db.commit()
-        return True
+    # Atomic decrement for ad messages next
+    async with aiosqlite.connect(DB_PATH) as db:
+        async with db.execute(
+            """
+            UPDATE users
+            SET ad_messages_remaining = ad_messages_remaining - 1
+            WHERE user_id = ? AND ad_messages_remaining > 0
+        """,
+            (user_id,),
+        ) as cursor:
+            if cursor.rowcount > 0:
+                await db.commit()
+                return True
 
     return False
 

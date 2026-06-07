@@ -88,8 +88,8 @@ async def main():
     logging.info(f"Web server started on port {config.PORT}")
 
     try:
-        while True:
-            await asyncio.sleep(3600)
+        # Wait for the bot polling task to finish (e.g. if it crashes or completes)
+        await app["bot_task"]
     except (KeyboardInterrupt, asyncio.CancelledError):
         pass
     finally:
