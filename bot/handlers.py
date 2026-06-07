@@ -8,9 +8,12 @@ from aiogram.types import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     CallbackQuery,
+    WebAppInfo,
 )
 from aiogram.filters import CommandStart, Command
 from aiogram.exceptions import TelegramBadRequest
+import config
+
 
 from db import (
     check_and_consume_quota,
@@ -94,8 +97,61 @@ PACKAGES = {
 }
 
 
-@router.message(Command("new"))
-async def cmd_new(message: Message):
+def get_pricing_keyboard(user_id: int, user: dict) -> InlineKeyboardMarkup:
+    keyboard_rows = []
+    if config.IS_ADSGRAM_ACTIVE:
+        keyboard_rows.append(
+            [
+                InlineKeyboardButton(
+                    text="🎬 Watch Ad (+5 requests)",
+                    web_app=WebAppInfo(url=f"{config.BASE_URL}/ad?user_id={user_id}"),
+                )
+            ]
+        )
+    else:
+        keyboard_rows.append(
+            [
+                InlineKeyboardButton(
+                    text="🎬 Get 5 free requests",
+                    callback_data="get_free_requests",
+                )
+            ]
+        )
+
+    keyboard_rows.extend(
+        [
+            [InlineKeyboardButton(text="50 messages — 100 ⭐️", callback_data="buy_50")],
+            [
+                InlineKeyboardButton(
+                    text="200 messages — 300 ⭐️", callback_data="buy_200"
+                )
+            ],
+        ]
+    )
+
+    if user["messages_bought"] == 0:
+        keyboard_rows.append(
+            [
+                InlineKeyboardButton(
+                    text="Unlimited (1 month) — 500 ⭐️", callback_data="buy_unlimited"
+                )
+            ]
+        )
+    return InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
+
+
+@router.callback_query(F.data == "get_free_requests")
+async def process_free_requests_callback(callback: CallbackQuery):
+    user_id = callback.from_user.id
+    from db import add_reward_quota
+
+    await add_reward_quota(user_id, 5)
+    await callback.message.answer("🎉 5 requests have been added to your balance!")
+    await callback.answer()
+
+
+@router.message(Command("clear"))
+async def cmd_clear(message: Message):
     if not message.from_user:
         return
 
@@ -119,7 +175,7 @@ async def cmd_new(message: Message):
 
     _cancel_all_chat_tasks(chat_id)
     await clear_history(chat_id)
-    await message.answer("New conversation started.")
+    await message.answer("Conversation history cleared.")
 
 
 @router.message(CommandStart())
@@ -151,8 +207,8 @@ async def cmd_start(message: Message):
     else:
         await message.answer(
             "Welcome! I am AI Agent.\n\n"
-            "You have 5 free messages per day.\n"
-            "Use /my_plan to view plans and purchase additional requests."
+            "You can watch ads to get 5 free requests per view.\n"
+            "Use /my_plan to view plans and get additional requests."
         )
 
 
@@ -171,13 +227,11 @@ async def cmd_my_plan(message: Message):
         return
 
     user = await get_user(user_id)
-    today = datetime.date.today()
-    today_str = today.isoformat()
 
     # Active unlimited subscription - do not show prices
     if user["unlimited_until"]:
         unlimited_until_date = datetime.date.fromisoformat(user["unlimited_until"])
-        if today <= unlimited_until_date:
+        if datetime.date.today() <= unlimited_until_date:
             formatted_date = unlimited_until_date.strftime("%d.%m.%Y")
             await message.answer(
                 "📋 Your Plan\n\n"
@@ -186,33 +240,16 @@ async def cmd_my_plan(message: Message):
             )
             return
 
-    # Count remaining free messages for today
-    if user["last_free_date"] == today_str:
-        free_remaining = max(0, 5 - user["free_messages_used_today"])
-    else:
-        free_remaining = 5
-
     lines = ["📋 Your Plan\n"]
     if user["messages_bought"] > 0:
-        lines.append(f"💬 Paid messages remaining: {user['messages_bought']}")
-    lines.append(f"🆓 Free messages today: {free_remaining} of 5")
-    lines.append("\n💳 Choose a package to purchase with Telegram Stars:")
+        lines.append(f"💬 Messages remaining: {user['messages_bought']}")
+    else:
+        lines.append("💬 Messages remaining: 0")
+    lines.append(
+        "\n🎬 Watch ads to get 5 free requests per view, or purchase a package:"
+    )
 
-    # If the user has paid messages, hide the unlimited option
-    keyboard_rows = [
-        [InlineKeyboardButton(text="50 messages — 100 ⭐️", callback_data="buy_50")],
-        [InlineKeyboardButton(text="200 messages — 300 ⭐️", callback_data="buy_200")],
-    ]
-    if user["messages_bought"] == 0:
-        keyboard_rows.append(
-            [
-                InlineKeyboardButton(
-                    text="Unlimited (1 month) — 500 ⭐️", callback_data="buy_unlimited"
-                )
-            ]
-        )
-
-    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
+    keyboard = get_pricing_keyboard(user_id, user)
     await message.answer("\n".join(lines), reply_markup=keyboard)
 
 
@@ -306,9 +343,12 @@ async def _process_message(
 
     has_quota = await check_and_consume_quota(user_id)
     if not has_quota:
+        user = await get_user(user_id)
+        keyboard = get_pricing_keyboard(user_id, user)
         await send_msg(
             "You have exhausted all available requests.\n"
-            "Use /my_plan to view plans or wait until tomorrow."
+            "Please watch an ad to get 5 free requests, or purchase a package below.",
+            reply_markup=keyboard,
         )
         return
 

@@ -109,7 +109,6 @@ async def check_and_consume_quota(user_id: int) -> bool:
     if await is_admin(user_id):
         return True
 
-    today_str = datetime.date.today().isoformat()
     user = await get_user(user_id)
 
     # Check unlimited month
@@ -132,33 +131,21 @@ async def check_and_consume_quota(user_id: int) -> bool:
             await db.commit()
         return True
 
-    # Check free tier (5 per day)
-    async with aiosqlite.connect(DB_PATH) as db:
-        if user["last_free_date"] != today_str:
-            # reset free messages for today
-            await db.execute(
-                """
-                UPDATE users
-                SET free_messages_used_today = 1, last_free_date = ?
-                WHERE user_id = ?
-            """,
-                (today_str, user_id),
-            )
-            await db.commit()
-            return True
-        elif user["free_messages_used_today"] < 5:
-            await db.execute(
-                """
-                UPDATE users
-                SET free_messages_used_today = free_messages_used_today + 1
-                WHERE user_id = ?
-            """,
-                (user_id,),
-            )
-            await db.commit()
-            return True
-
     return False
+
+
+async def add_reward_quota(user_id: int, count: int = 5):
+    await get_user(user_id)  # Ensure user exists
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """
+            UPDATE users
+            SET messages_bought = messages_bought + ?
+            WHERE user_id = ?
+        """,
+            (count, user_id),
+        )
+        await db.commit()
 
 
 async def grant_package(user_id: int, package_type: str):

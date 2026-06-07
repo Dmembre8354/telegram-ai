@@ -98,12 +98,15 @@ All infrastructure operations are automated through `Makefile` commands:
 
 By default, the application implements the following plans:
 
-- **Free Tier**: 5 messages per day (resets daily).
+- **Free Tier**: Watch a short video advertisement (Adsgram Integration) to get **5 free requests** (unlimited views allowed).
 - **50 Messages**: 100 ⭐️ (Telegram Stars).
 - **200 Messages**: 300 ⭐️ (Telegram Stars).
 - **Unlimited (1 month)**: 500 ⭐️ (Telegram Stars).
 
 To customize prices or create new packages, edit the `PACKAGES` dictionary in [bot/handlers.py](file:///Users/brige/Documents/TelegramAI/bot/handlers.py).
+
+For details on how to register on Adsgram, configure your ad blocks, and set up Nginx reverse proxy routing, see the [Adsgram Integration Guide](docs/adsgram.md).
+
 
 ---
 

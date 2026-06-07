@@ -7,7 +7,7 @@ Asynchronous Telegram bot built with `aiogram` v3. Connects to the AI service fo
 - **Streaming responses** — text appears in real time
 - **Image analysis** — send a photo, the bot reads text (OCR) and describes it
 - **Chat history** — context preserved across messages, auto-summarized after 20 messages
-- **`/new`** — start a new conversation (clears history)
+- **`/clear`** — clear conversation history
 - **Quota system:**
   - 5 free messages per day
   - 50 messages — 100 ⭐️
