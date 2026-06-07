@@ -104,7 +104,7 @@ def get_pricing_keyboard(user_id: int, user: dict) -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(
                     text="🎬 Watch Ad (+5 requests)",
-                    web_app=WebAppInfo(url=f"{config.BASE_URL}/ad?user_id={user_id}&blockId={config.ADSGRAM_BLOCK_ID}"),
+                    callback_data="watch_ad",
                 )
             ]
         )
@@ -163,6 +163,96 @@ async def process_free_requests_callback(callback: CallbackQuery):
             "Please come back tomorrow or purchase a package."
         )
     await callback.answer()
+
+
+@router.callback_query(F.data == "watch_ad")
+async def process_watch_ad_callback(callback: CallbackQuery, bot: Bot):
+    user_id = callback.from_user.id
+    
+    # Answer callback to stop loading state on the button
+    await callback.answer("Loading advertisement...")
+
+    # Query Adsgram advbot API
+    url = "https://api.adsgram.ai/advbot"
+    params = {
+        "tgid": str(user_id),
+        "blockid": str(config.ADSGRAM_BLOCK_ID).replace("bot-", ""),
+        "token": str(config.ADSGRAM_SECRET),
+        "language": callback.from_user.language_code or "en",
+    }
+    
+    import aiohttp
+    import logging
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, params=params) as resp:
+                if resp.status != 200:
+                    logging.error(f"Adsgram API returned status {resp.status}")
+                    await callback.message.answer(
+                        "⚠️ Failed to load advertisement. Please try again later."
+                    )
+                    return
+                data = await resp.json()
+    except Exception as e:
+        logging.error(f"Error fetching ad from Adsgram: {e}")
+        await callback.message.answer(
+            "⚠️ An error occurred while loading the advertisement. Please try again."
+        )
+        return
+
+    # Check if we have ad data
+    text_html = data.get("text_html")
+    if not text_html:
+        await callback.message.answer(
+            "⚠️ No ads available at the moment. Please try again later."
+        )
+        return
+
+    image_url = data.get("image_url")
+    click_url = data.get("click_url")
+    button_name = data.get("button_name", "Open Ad")
+    reward_url = data.get("reward_url")
+    button_reward_name = data.get("button_reward_name", "Claim Reward")
+
+    # Construct inline keyboard for the ad
+    keyboard_buttons = []
+    if click_url:
+        keyboard_buttons.append([
+            InlineKeyboardButton(text=button_name, url=click_url)
+        ])
+    if reward_url:
+        keyboard_buttons.append([
+            InlineKeyboardButton(text=button_reward_name, url=reward_url)
+        ])
+    
+    ad_keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
+
+    # Send ad message to user
+    # protect_content=True is required by Adsgram to prevent ad forwarding
+    try:
+        if image_url:
+            await bot.send_photo(
+                chat_id=callback.message.chat.id,
+                photo=image_url,
+                caption=text_html,
+                parse_mode="HTML",
+                reply_markup=ad_keyboard,
+                protect_content=True,
+            )
+        else:
+            await bot.send_message(
+                chat_id=callback.message.chat.id,
+                text=text_html,
+                parse_mode="HTML",
+                reply_markup=ad_keyboard,
+                protect_content=True,
+            )
+    except Exception as e:
+        logging.error(f"Error sending ad message: {e}")
+        await callback.message.answer(
+            "⚠️ Failed to display the advertisement. Please try again."
+        )
 
 
 @router.message(Command("clear"))

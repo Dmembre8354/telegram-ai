@@ -11,18 +11,6 @@ from handlers import router
 logging.basicConfig(level=logging.INFO)
 
 
-async def handle_ad(request):
-    try:
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        ad_html_path = os.path.join(current_dir, "ad.html")
-        with open(ad_html_path, "r", encoding="utf-8") as f:
-            html = f.read()
-        html = html.replace("{{ BLOCK_ID }}", config.ADSGRAM_BLOCK_ID)
-        return web.Response(text=html, content_type="text/html")
-    except Exception as e:
-        logging.error(f"Error serving ad.html: {e}")
-        return web.Response(text="Internal Server Error", status=500)
-
 
 async def handle_reward(request):
     secret = request.query.get("secret")
@@ -63,7 +51,7 @@ async def main():
 
     app = web.Application()
     app["bot"] = bot
-    app.add_routes([web.get("/ad", handle_ad), web.get("/reward", handle_reward)])
+    app.add_routes([web.get("/reward", handle_reward)])
 
     async def start_bot(app):
         app["bot_task"] = asyncio.create_task(dp.start_polling(bot))
