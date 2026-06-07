@@ -104,7 +104,7 @@ def get_pricing_keyboard(user_id: int, user: dict) -> InlineKeyboardMarkup:
             [
                 InlineKeyboardButton(
                     text="🎬 Watch Ad (+5 requests)",
-                    web_app=WebAppInfo(url=f"{config.BASE_URL}/ad?user_id={user_id}"),
+                    web_app=WebAppInfo(url=f"{config.BASE_URL}/ad?user_id={user_id}&blockId={config.ADSGRAM_BLOCK_ID}"),
                 )
             ]
         )

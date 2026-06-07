@@ -201,25 +201,35 @@
             window.Telegram.WebApp.expand();
         }
 
+        // Extract parameters from URL query parameters
+        const urlParams = new URLSearchParams(window.location.search);
+
         // Extract User ID
         let userId = null;
         if (window.Telegram && window.Telegram.WebApp && window.Telegram.WebApp.initDataUnsafe && window.Telegram.WebApp.initDataUnsafe.user) {
             userId = window.Telegram.WebApp.initDataUnsafe.user.id;
         }
         if (!userId) {
-            const urlParams = new URLSearchParams(window.location.search);
             userId = urlParams.get('user_id');
         }
 
-        // Initialize Adsgram
-        // The block ID will be replaced on the server side dynamically
-        const blockId = "{{ BLOCK_ID }}";
+        // Extract blockId from URL or fallback to template variable
+        let blockId = urlParams.get('blockId') || urlParams.get('block_id');
+        if (!blockId || blockId === "{{ BLOCK_ID }}" || blockId.trim() === "") {
+            blockId = "{{ BLOCK_ID }}";
+        }
+
         let AdController = null;
 
-        try {
-            AdController = window.Adsgram.init({ blockId: blockId });
-        } catch (e) {
-            console.error("Adsgram init error:", e);
+        // Initialize Adsgram if blockId is configured and valid
+        if (!blockId || blockId === "{{ BLOCK_ID }}" || blockId.trim() === "") {
+            console.error("Adsgram error: blockId is not configured.");
+        } else {
+            try {
+                AdController = window.Adsgram.init({ blockId: blockId });
+            } catch (e) {
+                console.error("Adsgram init error:", e);
+            }
         }
 
         function showAd() {
@@ -228,7 +238,7 @@
             document.getElementById('status-error').style.display = 'none';
 
             if (!AdController) {
-                showError("Adsgram SDK failed to initialize.");
+                showError("Adsgram SDK failed to initialize. Block ID is missing or invalid.");
                 return;
             }
 
