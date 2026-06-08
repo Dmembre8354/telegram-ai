@@ -140,7 +140,8 @@ class MediaService:
                     or "application/octet-stream"
                 )
 
-                # Check if it's a text file we can read directly, and it is small enough (< 512 KB) to avoid bloating the prompt
+                # Check if it's a text file we can read directly,
+                # and it is small enough (< 512 KB) to avoid bloating the prompt
                 if (
                     cls.is_text_file(filename, mime_type)
                     and len(file_bytes) <= 512 * 1024
