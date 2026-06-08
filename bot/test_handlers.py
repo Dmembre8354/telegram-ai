@@ -61,6 +61,18 @@ async def run_tests():
     # 7. Test quota logic
     await test_quota_logic()
 
+    # 7b. Test omissions short-circuiting
+    await test_omissions_short_circuit()
+
+    # 7c. Test default prompt with omissions and valid media
+    await test_default_prompt_with_omission_and_valid_media()
+
+    # 7d. Test media group caption aggregation substring handling
+    await test_media_group_caption_aggregation()
+
+    # 8. Test Media Service
+    await test_media_service()
+
     print("All tests passed!")
 
 
@@ -363,6 +375,370 @@ async def test_quota_logic():
         )
     finally:
         config.IS_ADSGRAM_ACTIVE = old_adsgram_active
+
+
+async def test_omissions_short_circuit():
+    from unittest.mock import AsyncMock, patch
+    from aiogram.types import Chat, User, Message
+    import handlers
+    import datetime
+
+    chat = Chat(id=123, type="private")
+    user = User(id=999, is_bot=False, first_name="User")
+    message = Message(
+        message_id=1,
+        date=datetime.datetime.now(),
+        chat=chat,
+        from_user=user,
+        text="Thinking...",
+    )
+
+    mock_answer = AsyncMock()
+    object.__setattr__(message, "answer", mock_answer)
+
+    patch_quota = patch("handlers.check_and_consume_quota", new_callable=AsyncMock)
+    patch_generate = patch("handlers.generate_llm_response", new_callable=AsyncMock)
+
+    with patch_quota as mock_quota, patch_generate as mock_generate:
+        omission_text = (
+            "[Document: file.zip was omitted because it exceeds the 20 MB size limit.]"
+        )
+        await handlers._process_message(123, 999, omission_text, [], message)
+
+        mock_quota.assert_not_called()
+        mock_generate.assert_not_called()
+        mock_answer.assert_called_once_with(omission_text)
+
+
+async def test_media_service():
+    from media_service import MediaService
+    from aiogram.types import Message, Voice, PhotoSize, Document, Chat, User
+    from unittest.mock import AsyncMock, MagicMock
+    import io
+    import datetime
+
+    # 1. Test is_text_file
+    assert MediaService.is_text_file("main.py", "text/x-python") is True
+    assert MediaService.is_text_file("data.json", "application/json") is True
+    assert MediaService.is_text_file("image.png", "image/png") is False
+    assert MediaService.is_text_file("doc.pdf", "application/pdf") is False
+
+    # 2. Test Voice message
+    mock_bot = AsyncMock()
+    voice = Voice(
+        file_id="voice_123", duration=5, file_unique_id="v1", mime_type="audio/ogg"
+    )
+    msg_voice = Message(
+        message_id=5,
+        date=datetime.datetime.now(),
+        chat=Chat(id=123, type="private"),
+        from_user=User(id=999, is_bot=False, first_name="User"),
+        voice=voice,
+    )
+    msg_voice._bot = mock_bot
+    mock_file_info = MagicMock(file_path="voice_path")
+    mock_bot.get_file = AsyncMock(return_value=mock_file_info)
+    mock_bot.download_file = AsyncMock(return_value=io.BytesIO(b"oggdata"))
+
+    text, parts = await MediaService.process_message_media(msg_voice)
+    assert text == ""
+    assert len(parts) == 1
+    assert parts[0]["mime_type"] == "audio/ogg"
+    assert parts[0]["data"] == b"oggdata"
+    mock_bot.get_file.assert_called_once_with("voice_123")
+    mock_bot.download_file.assert_called_once_with("voice_path")
+
+    # 3. Test Text File Document
+    mock_bot = AsyncMock()
+    doc_text = Document(
+        file_id="doc_123",
+        file_unique_id="d1",
+        file_name="test.py",
+        mime_type="text/x-python",
+        file_size=100,
+    )
+    msg_doc_text = Message(
+        message_id=6,
+        date=datetime.datetime.now(),
+        chat=Chat(id=123, type="private"),
+        from_user=User(id=999, is_bot=False, first_name="User"),
+        document=doc_text,
+    )
+    msg_doc_text._bot = mock_bot
+
+    mock_file_info_text = MagicMock(file_path="doc_text_path")
+    mock_bot.get_file = AsyncMock(return_value=mock_file_info_text)
+    mock_bot.download_file = AsyncMock(return_value=io.BytesIO(b"print('hello')"))
+
+    text, parts = await MediaService.process_message_media(msg_doc_text)
+    assert "Process the attached files." in text
+    assert "=== START OF ATTACHED FILE: test.py ===" in text
+    assert "print('hello')" in text
+    assert len(parts) == 0  # Should be empty because it was decoded as text
+    mock_bot.get_file.assert_called_once_with("doc_123")
+    mock_bot.download_file.assert_called_once_with("doc_text_path")
+
+    # 4. Test PDF Document (Binary)
+    mock_bot = AsyncMock()
+    doc_pdf = Document(
+        file_id="doc_456",
+        file_unique_id="d2",
+        file_name="paper.pdf",
+        mime_type="application/pdf",
+        file_size=200,
+    )
+    msg_doc_pdf = Message(
+        message_id=7,
+        date=datetime.datetime.now(),
+        chat=Chat(id=123, type="private"),
+        from_user=User(id=999, is_bot=False, first_name="User"),
+        document=doc_pdf,
+    )
+    msg_doc_pdf._bot = mock_bot
+
+    mock_file_info_pdf = MagicMock(file_path="doc_pdf_path")
+    mock_bot.get_file = AsyncMock(return_value=mock_file_info_pdf)
+    mock_bot.download_file = AsyncMock(return_value=io.BytesIO(b"pdfdata"))
+
+    text, parts = await MediaService.process_message_media(msg_doc_pdf)
+    assert text == ""
+    assert len(parts) == 1
+    assert parts[0]["mime_type"] == "application/pdf"
+    assert parts[0]["data"] == b"pdfdata"
+    mock_bot.get_file.assert_called_once_with("doc_456")
+    mock_bot.download_file.assert_called_once_with("doc_pdf_path")
+
+    # 5. Test Photo in Album (with media_group_id)
+    mock_bot = AsyncMock()
+    photo_size = PhotoSize(
+        file_id="photo_123",
+        file_unique_id="p1",
+        width=100,
+        height=100,
+        file_size=300,
+    )
+    msg_photo = Message(
+        message_id=8,
+        date=datetime.datetime.now(),
+        chat=Chat(id=123, type="private"),
+        from_user=User(id=999, is_bot=False, first_name="User"),
+        photo=[photo_size],
+        media_group_id="group_123",
+    )
+    msg_photo._bot = mock_bot
+
+    mock_file_info_photo = MagicMock(file_path="photo_path")
+    mock_bot.get_file = AsyncMock(return_value=mock_file_info_photo)
+    mock_bot.download_file = AsyncMock(return_value=io.BytesIO(b"photodata"))
+
+    text, parts = await MediaService.process_message_media(msg_photo)
+    assert text == ""
+    assert len(parts) == 1
+    assert parts[0]["mime_type"] == "image/jpeg"
+    assert parts[0]["data"] == b"photodata"
+    mock_bot.get_file.assert_called_once_with("photo_123")
+    mock_bot.download_file.assert_called_once_with("photo_path")
+
+    # 6. Test Document exceeding size limit (> 20MB)
+    mock_bot = AsyncMock()
+    doc_large = Document(
+        file_id="doc_large_123",
+        file_unique_id="d3",
+        file_name="large.zip",
+        mime_type="application/zip",
+        file_size=25 * 1024 * 1024,  # 25 MB
+    )
+    msg_doc_large = Message(
+        message_id=9,
+        date=datetime.datetime.now(),
+        chat=Chat(id=123, type="private"),
+        from_user=User(id=999, is_bot=False, first_name="User"),
+        document=doc_large,
+    )
+    msg_doc_large._bot = mock_bot
+
+    text, parts = await MediaService.process_message_media(msg_doc_large)
+    assert "large.zip was omitted because it exceeds the 20 MB size limit" in text
+    assert len(parts) == 0
+    mock_bot.get_file.assert_not_called()
+
+    # 7. Test Voice exceeding size limit (> 20MB)
+    mock_bot = AsyncMock()
+    voice_large = Voice(
+        file_id="voice_large_123",
+        duration=5,
+        file_unique_id="vl1",
+        mime_type="audio/ogg",
+        file_size=25 * 1024 * 1024,
+    )
+    msg_voice_large = Message(
+        message_id=10,
+        date=datetime.datetime.now(),
+        chat=Chat(id=123, type="private"),
+        from_user=User(id=999, is_bot=False, first_name="User"),
+        voice=voice_large,
+    )
+    msg_voice_large._bot = mock_bot
+
+    text, parts = await MediaService.process_message_media(msg_voice_large)
+    assert "Voice note was omitted because it exceeds the 20 MB size limit" in text
+    assert len(parts) == 0
+    mock_bot.get_file.assert_not_called()
+
+    # 8. Test Photo exceeding size limit (> 20MB)
+    mock_bot = AsyncMock()
+    photo_large = PhotoSize(
+        file_id="photo_large_123",
+        file_unique_id="pl1",
+        width=1000,
+        height=1000,
+        file_size=25 * 1024 * 1024,
+    )
+    msg_photo_large = Message(
+        message_id=11,
+        date=datetime.datetime.now(),
+        chat=Chat(id=123, type="private"),
+        from_user=User(id=999, is_bot=False, first_name="User"),
+        photo=[photo_large],
+    )
+    msg_photo_large._bot = mock_bot
+
+    text, parts = await MediaService.process_message_media(msg_photo_large)
+    assert "Photo was omitted because it exceeds the 20 MB size limit" in text
+    assert len(parts) == 0
+    mock_bot.get_file.assert_not_called()
+
+    # 9. Test Text decode failure fallback preserves original MIME type
+    mock_bot = AsyncMock()
+    doc_broken_text = Document(
+        file_id="doc_broken_123",
+        file_unique_id="d4",
+        file_name="broken.py",
+        mime_type="text/x-python",
+        file_size=100,
+    )
+    msg_broken = Message(
+        message_id=12,
+        date=datetime.datetime.now(),
+        chat=Chat(id=123, type="private"),
+        from_user=User(id=999, is_bot=False, first_name="User"),
+        document=doc_broken_text,
+    )
+    msg_broken._bot = mock_bot
+
+    mock_file_info_broken = MagicMock(file_path="broken_path")
+    mock_bot.get_file = AsyncMock(return_value=mock_file_info_broken)
+    # Return invalid UTF-8 bytes to trigger decode error
+    mock_bot.download_file = AsyncMock(return_value=io.BytesIO(b"\xff\xfe\x00\x00"))
+
+    text, parts = await MediaService.process_message_media(msg_broken)
+    assert text == ""
+    assert len(parts) == 1
+    assert parts[0]["mime_type"] == "text/x-python"
+    assert parts[0]["data"] == b"\xff\xfe\x00\x00"
+    mock_bot.get_file.assert_called_once_with("doc_broken_123")
+    mock_bot.download_file.assert_called_once_with("broken_path")
+
+
+async def test_default_prompt_with_omission_and_valid_media():
+    from unittest.mock import AsyncMock, patch
+    from aiogram.types import Chat, User, Message
+    import handlers
+    import datetime
+
+    chat = Chat(id=123, type="private")
+    user = User(id=999, is_bot=False, first_name="User")
+    message = Message(
+        message_id=1,
+        date=datetime.datetime.now(),
+        chat=chat,
+        from_user=user,
+        text="Thinking...",
+    )
+
+    mock_answer = AsyncMock()
+    mock_processing_msg = AsyncMock()
+    mock_answer.return_value = mock_processing_msg
+    object.__setattr__(message, "answer", mock_answer)
+
+    patch_quota = patch(
+        "handlers.check_and_consume_quota", new_callable=AsyncMock, return_value=True
+    )
+    patch_add = patch("handlers.add_message", new_callable=AsyncMock)
+    patch_hist = patch("handlers.get_history", new_callable=AsyncMock, return_value=[])
+    patch_generate = patch("handlers.generate_llm_response")
+
+    handlers._active_tasks.clear()
+
+    import config
+
+    old_key = config.GEMINI_API_KEY
+    config.GEMINI_API_KEY = "mock_key"
+
+    try:
+
+        async def mock_stream(*args, **kwargs):
+            yield "Response"
+
+        with (
+            patch_quota
+        ), patch_add as mock_add, patch_hist, patch_generate as mock_generate:
+            mock_generate.side_effect = mock_stream
+            omission_text = "[Document: file.zip was omitted because it exceeds the 20 MB size limit.]"
+            valid_media = [{"data": b"imagedata", "mime_type": "image/jpeg"}]
+
+            await handlers._process_message(
+                123, 999, omission_text, valid_media, message
+            )
+
+            task = handlers._active_tasks.get((123, 999))
+            if task:
+                await task
+
+            mock_add.assert_any_call(
+                123,
+                "user",
+                "Describe the images.\n\n[Document: file.zip was omitted because it exceeds the 20 MB size limit.]",
+            )
+    finally:
+        config.GEMINI_API_KEY = old_key
+
+
+async def test_media_group_caption_aggregation():
+    from unittest.mock import AsyncMock, patch
+    from aiogram.types import Chat, User, Message
+    import handlers
+    import datetime
+
+    handlers._media_groups.clear()
+
+    chat = Chat(id=123, type="private")
+    user = User(id=999, is_bot=False, first_name="User")
+
+    msg1 = Message(
+        message_id=1,
+        date=datetime.datetime.now(),
+        chat=chat,
+        from_user=user,
+        text="hello world",
+        media_group_id="group_123",
+    )
+    msg2 = Message(
+        message_id=2,
+        date=datetime.datetime.now(),
+        chat=chat,
+        from_user=user,
+        text="hello",
+        media_group_id="group_123",
+    )
+
+    with patch("handlers.MediaService.process_message_media", new_callable=AsyncMock):
+        await handlers.handle_message(msg1)
+        await handlers.handle_message(msg2)
+
+        group = handlers._media_groups.get("group_123")
+        assert group is not None
+        assert group["text"] == "hello world\nhello"
 
 
 if __name__ == "__main__":

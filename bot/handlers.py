@@ -24,6 +24,7 @@ from db import (
     clear_history,
 )
 from llm import generate_llm_response, summarize_history
+from media_service import MediaService
 
 router = Router()
 
@@ -44,7 +45,13 @@ async def _get_bot_info(bot):
     return _bot_id, _bot_username
 
 
-# Buffer for media group albums: media_group_id -> {user_id, text, photos, message}
+# Buffer for media group albums: media_group_id -> {
+#   "chat_id": int,
+#   "user_id": int,
+#   "text": str or None,
+#   "messages": list[Message],
+#   "is_mentioned": bool
+# }
 _media_groups: dict[str, dict] = {}
 _media_group_tasks: dict[str, asyncio.Task] = {}
 
@@ -217,13 +224,11 @@ async def process_watch_ad_callback(callback: CallbackQuery, bot: Bot):
     # Construct inline keyboard for the ad
     keyboard_buttons = []
     if click_url:
-        keyboard_buttons.append([
-            InlineKeyboardButton(text=button_name, url=click_url)
-        ])
+        keyboard_buttons.append([InlineKeyboardButton(text=button_name, url=click_url)])
     if reward_url:
-        keyboard_buttons.append([
-            InlineKeyboardButton(text=button_reward_name, url=reward_url)
-        ])
+        keyboard_buttons.append(
+            [InlineKeyboardButton(text=button_reward_name, url=reward_url)]
+        )
 
     ad_keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_buttons)
 
@@ -428,32 +433,72 @@ async def process_successful_payment(message: Message):
 
 
 async def _handle_media_group(group_id: str):
-    """Wait briefly for all album photos to arrive, then process as one request."""
+    """Wait briefly for all album items to arrive, then process as one request."""
     await asyncio.sleep(0.5)
     group = _media_groups.pop(group_id, None)
     _media_group_tasks.pop(group_id, None)
-    if not group:
+    if not group or not group["messages"]:
         return
 
     # Check if we should process in group chats
-    message = group["message"]
+    message = group["messages"][0]
     is_group = message.chat.type in ("group", "supergroup")
     if is_group and not group.get("is_mentioned"):
         return
 
+    # Download and process the deferred media group items
+    media_parts = []
+    text_accumulated = group["text"] or ""
+
+    for msg in group["messages"]:
+        extracted_text, item_parts = await MediaService.process_message_media(
+            msg, override_text=""
+        )
+        media_parts.extend(item_parts)
+        if extracted_text:
+            if text_accumulated:
+                text_accumulated += "\n" + extracted_text
+            else:
+                text_accumulated = extracted_text
+
     await _process_message(
         group["chat_id"],
         group["user_id"],
-        group["text"],
-        group["photos"],
-        group["message"],
+        text_accumulated.strip(),
+        media_parts,
+        message,
     )
 
 
+def _is_only_omissions(prompt: str) -> bool:
+    if not prompt:
+        return True
+    lines = prompt.strip().split("\n")
+    for line in lines:
+        line_stripped = line.strip()
+        if not line_stripped:
+            continue
+        is_omission = (
+            line_stripped.startswith("[")
+            and "omitted because it exceeds" in line_stripped
+            and line_stripped.endswith("]")
+        )
+        if not is_omission:
+            return False
+    return True
+
+
 async def _process_message(
-    chat_id: int, user_id: int, text, images: list, message: Message
+    chat_id: int, user_id: int, text, media_parts: list, message: Message
 ):
-    if not text and not images:
+    if not text and not media_parts:
+        return
+
+    # Check if all media was omitted and no user text/caption was provided
+    if not media_parts and _is_only_omissions(text):
+        is_group = message.chat.type in ("group", "supergroup")
+        send_msg = message.reply if is_group else message.answer
+        await send_msg(text.strip())
         return
 
     prompt = text or ""
@@ -493,9 +538,28 @@ async def _process_message(
             )
         return
 
-    if images:
+    if media_parts:
         processing_msg = await send_msg("Thinking...")
-        prompt = text if text else "Describe the images."
+        if not prompt.strip() or _is_only_omissions(prompt):
+            has_audio = any(
+                isinstance(p, dict) and p.get("mime_type", "").startswith("audio/")
+                for p in media_parts
+            )
+            has_image = any(
+                isinstance(p, dict) and p.get("mime_type", "").startswith("image/")
+                for p in media_parts
+            )
+            if has_audio:
+                default_prompt = "Listen to the audio and reply to it."
+            elif has_image:
+                default_prompt = "Describe the images."
+            else:
+                default_prompt = "Process the attached files."
+
+            if prompt.strip():
+                prompt = default_prompt + "\n\n" + prompt.strip()
+            else:
+                prompt = default_prompt
     else:
         processing_msg = await send_msg("Thinking...")
 
@@ -513,7 +577,9 @@ async def _process_message(
 
     parse_mode = "HTML"
 
-    stream_generator = generate_llm_response(messages_for_response, images=images)
+    stream_generator = generate_llm_response(
+        messages_for_response, media_parts=media_parts
+    )
 
     async def _run_generation():
         full_text = ""
@@ -614,30 +680,32 @@ async def handle_message(message: Message):
                 text = re.sub(pattern, "", text)
                 text = re.sub(r"\s+", " ", text).strip()
 
-    # Handle media group (album with multiple photos)
-    if message.media_group_id and message.photo:
+    # Handle media group (album with multiple photos or documents)
+    if message.media_group_id:
         group_id = message.media_group_id
-        photo = message.photo[-1]
-        file_info = await message.bot.get_file(photo.file_id)
-        file = await message.bot.download_file(file_info.file_path)
-        image_bytes = file.read()
 
         if group_id not in _media_groups:
             _media_groups[group_id] = {
                 "chat_id": chat_id,
                 "user_id": user_id,
                 "text": None,
-                "photos": [],
-                "message": message,
+                "messages": [],
                 "is_mentioned": False,
             }
-        _media_groups[group_id]["photos"].append(image_bytes)
+
+        _media_groups[group_id]["messages"].append(message)
         if text:
-            _media_groups[group_id]["text"] = text
+            if _media_groups[group_id]["text"]:
+                existing_lines = _media_groups[group_id]["text"].split("\n")
+                if text not in existing_lines:
+                    _media_groups[group_id]["text"] += "\n" + text
+            else:
+                _media_groups[group_id]["text"] = text
+
         if is_mentioned:
             _media_groups[group_id]["is_mentioned"] = True
 
-        # Restart timer on each new photo to wait for the rest
+        # Restart timer on each new item to wait for the rest
         if group_id in _media_group_tasks:
             _media_group_tasks[group_id].cancel()
         _media_group_tasks[group_id] = asyncio.create_task(
@@ -645,20 +713,15 @@ async def handle_message(message: Message):
         )
         return
 
-    # Single photo or text-only message
+    # Single message (with text, photo, voice, document, etc.)
     if is_group and not is_mentioned:
         return
 
-    image_bytes = None
-    if message.photo:
-        photo = message.photo[-1]
-        file_info = await message.bot.get_file(photo.file_id)
-        file = await message.bot.download_file(file_info.file_path)
-        image_bytes = file.read()
+    extracted_text, media_parts = await MediaService.process_message_media(
+        message, override_text=text
+    )
 
-    if not text and not image_bytes:
+    if not extracted_text and not media_parts:
         return
 
-    await _process_message(
-        chat_id, user_id, text, [image_bytes] if image_bytes else [], message
-    )
+    await _process_message(chat_id, user_id, extracted_text, media_parts, message)
