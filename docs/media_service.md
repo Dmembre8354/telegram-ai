@@ -31,20 +31,21 @@ graph TD
 ## How It Works
 
 `MediaService.process_message_media(message, override_text=None)` inspects a Telegram message for the following fields:
-1. **`voice`**: Extracts voice notes. Downloads the file and formats as an `audio/ogg` part.
-2. **`photo`**: Extracts photos (both standalone photos and individual photos in media group albums). Downloads the highest resolution version and formats as `image/jpeg`.
+1. **`voice`**: Extracts voice notes. Downloads the file (up to 20 MB limit) and formats as an `audio/ogg` part.
+2. **`photo`**: Extracts photos (both standalone photos and individual photos in media group albums). Downloads the image (up to 20 MB limit) and formats as `image/jpeg`.
 3. **`document`**: Extracts document uploads.
-   - If the file is classified as a text file (via extension or MIME type) and can be decoded as UTF-8, its contents are appended directly to the text prompt wrapped in text blocks (`=== START OF ATTACHED FILE: filename ===`).
-   - Otherwise, the document is downloaded and passed as raw bytes along with its MIME type (e.g. `application/pdf`).
-4. **`audio`**: Extracts audio file attachments (e.g., MP3 files). Downloads and formats as `audio/*`.
-5. **`video` / `video_note`**: Extracts standard videos and round video messages. Downloads and formats as `video/mp4` or other appropriate video MIME types.
+   - If the file is classified as a text file (via extension or MIME type), can be decoded as UTF-8, and is **512 KB or smaller**, its contents are decoded and appended directly to the text prompt wrapped in text blocks (`=== START OF ATTACHED FILE: filename ===`).
+   - Otherwise, if the document size is up to 20 MB, it is downloaded and passed as raw bytes along with its MIME type (e.g., `application/pdf`).
+   - Any document exceeding 20 MB is omitted from downloading, and a notification is appended to the text prompt.
+4. **`audio`**: Extracts audio file attachments (e.g., MP3 files). Downloads the file (up to 20 MB limit) and formats as `audio/*`.
+5. **`video` / `video_note`**: Extracts standard videos and round video messages. Downloads the file (up to 20 MB limit) and formats as `video/mp4` or other appropriate video MIME types.
 
 For media group albums (multiple photos/documents sent together), the bot router in `handlers.py` aggregates them by calling `MediaService.process_message_media` on each message in the group sequentially, combining all retrieved media parts and text.
 
 ### Injected Prompts for Media
 
 If the user sends media without a caption, the system dynamically appends a default instruction to prompt the LLM correctly:
-* **Voice messages**: `Listen to the voice message and reply to it.`
+* **Audio/Voice messages**: `Listen to the audio and reply to it.`
 * **Images**: `Describe the images.`
 * **Files/Documents**: `Process the attached files.`
 

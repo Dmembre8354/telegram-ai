@@ -74,19 +74,27 @@ class MediaService:
         # 1. Voice Messages
         if message.voice:
             voice = message.voice
-            file_info = await message.bot.get_file(voice.file_id)
-            file = await message.bot.download_file(file_info.file_path)
-            voice_bytes = file.read()
-            mime_type = voice.mime_type or "audio/ogg"
-            media_parts.append({"data": voice_bytes, "mime_type": mime_type})
+            if voice.file_size and voice.file_size > 20 * 1024 * 1024:
+                text += "\n\n[Voice note was omitted because it exceeds the 20 MB size limit.]"
+            else:
+                file_info = await message.bot.get_file(voice.file_id)
+                file = await message.bot.download_file(file_info.file_path)
+                voice_bytes = file.read()
+                mime_type = voice.mime_type or "audio/ogg"
+                media_parts.append({"data": voice_bytes, "mime_type": mime_type})
 
         # 2. Photos
         elif message.photo:
             photo = message.photo[-1]
-            file_info = await message.bot.get_file(photo.file_id)
-            file = await message.bot.download_file(file_info.file_path)
-            photo_bytes = file.read()
-            media_parts.append({"data": photo_bytes, "mime_type": "image/jpeg"})
+            if photo.file_size and photo.file_size > 20 * 1024 * 1024:
+                text += (
+                    "\n\n[Photo was omitted because it exceeds the 20 MB size limit.]"
+                )
+            else:
+                file_info = await message.bot.get_file(photo.file_id)
+                file = await message.bot.download_file(file_info.file_path)
+                photo_bytes = file.read()
+                media_parts.append({"data": photo_bytes, "mime_type": "image/jpeg"})
 
         # 3. Audio files
         elif message.audio:
@@ -157,9 +165,7 @@ class MediaService:
                         text += file_prompt
                     except UnicodeDecodeError:
                         # Fallback to sending as byte part if UTF-8 decode fails
-                        media_parts.append(
-                            {"data": file_bytes, "mime_type": "text/plain"}
-                        )
+                        media_parts.append({"data": file_bytes, "mime_type": mime_type})
                 else:
                     # PDF, image, audio, etc. passed as raw bytes
                     media_parts.append({"data": file_bytes, "mime_type": mime_type})

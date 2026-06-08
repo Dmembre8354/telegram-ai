@@ -518,6 +518,80 @@ async def test_media_service():
     assert len(parts) == 0
     mock_bot.get_file.assert_not_called()
 
+    # 7. Test Voice exceeding size limit (> 20MB)
+    voice_large = Voice(
+        file_id="voice_large_123",
+        duration=5,
+        file_unique_id="vl1",
+        mime_type="audio/ogg",
+        file_size=25 * 1024 * 1024,
+    )
+    msg_voice_large = Message(
+        message_id=10,
+        date=datetime.datetime.now(),
+        chat=Chat(id=123, type="private"),
+        from_user=User(id=999, is_bot=False, first_name="User"),
+        voice=voice_large,
+    )
+    msg_voice_large._bot = mock_bot
+
+    mock_bot.get_file.reset_mock()
+    text, parts = await MediaService.process_message_media(msg_voice_large)
+    assert "Voice note was omitted because it exceeds the 20 MB size limit" in text
+    assert len(parts) == 0
+    mock_bot.get_file.assert_not_called()
+
+    # 8. Test Photo exceeding size limit (> 20MB)
+    photo_large = PhotoSize(
+        file_id="photo_large_123",
+        file_unique_id="pl1",
+        width=1000,
+        height=1000,
+        file_size=25 * 1024 * 1024,
+    )
+    msg_photo_large = Message(
+        message_id=11,
+        date=datetime.datetime.now(),
+        chat=Chat(id=123, type="private"),
+        from_user=User(id=999, is_bot=False, first_name="User"),
+        photo=[photo_large],
+    )
+    msg_photo_large._bot = mock_bot
+
+    mock_bot.get_file.reset_mock()
+    text, parts = await MediaService.process_message_media(msg_photo_large)
+    assert "Photo was omitted because it exceeds the 20 MB size limit" in text
+    assert len(parts) == 0
+    mock_bot.get_file.assert_not_called()
+
+    # 9. Test Text decode failure fallback preserves original MIME type
+    doc_broken_text = Document(
+        file_id="doc_broken_123",
+        file_unique_id="d4",
+        file_name="broken.py",
+        mime_type="text/x-python",
+        file_size=100,
+    )
+    msg_broken = Message(
+        message_id=12,
+        date=datetime.datetime.now(),
+        chat=Chat(id=123, type="private"),
+        from_user=User(id=999, is_bot=False, first_name="User"),
+        document=doc_broken_text,
+    )
+    msg_broken._bot = mock_bot
+
+    mock_file_info_broken = MagicMock(file_path="broken_path")
+    mock_bot.get_file = AsyncMock(return_value=mock_file_info_broken)
+    # Return invalid UTF-8 bytes to trigger decode error
+    mock_bot.download_file = AsyncMock(return_value=io.BytesIO(b"\xff\xfe\x00\x00"))
+
+    text, parts = await MediaService.process_message_media(msg_broken)
+    assert text == ""
+    assert len(parts) == 1
+    assert parts[0]["mime_type"] == "text/x-python"
+    assert parts[0]["data"] == b"\xff\xfe\x00\x00"
+
 
 if __name__ == "__main__":
     asyncio.run(run_tests())

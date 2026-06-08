@@ -45,7 +45,7 @@ async def _get_bot_info(bot):
     return _bot_id, _bot_username
 
 
-# Buffer for media group albums: media_group_id -> {user_id, text, media_parts, message}
+# Buffer for media group albums: media_group_id -> {chat_id, user_id, text, media_parts, message, is_mentioned}
 _media_groups: dict[str, dict] = {}
 _media_group_tasks: dict[str, asyncio.Task] = {}
 
@@ -504,7 +504,7 @@ async def _process_message(
                 for p in media_parts
             )
             if has_voice:
-                prompt = "Listen to the voice message and reply to it."
+                prompt = "Listen to the audio and reply to it."
             elif has_image:
                 prompt = "Describe the images."
             else:
