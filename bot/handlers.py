@@ -496,10 +496,12 @@ async def _process_message(
         processing_msg = await send_msg("Thinking...")
         if not prompt:
             has_voice = any(
-                p.get("mime_type", "").startswith("audio/") for p in media_parts
+                isinstance(p, dict) and p.get("mime_type", "").startswith("audio/")
+                for p in media_parts
             )
             has_image = any(
-                p.get("mime_type", "").startswith("image/") for p in media_parts
+                isinstance(p, dict) and p.get("mime_type", "").startswith("image/")
+                for p in media_parts
             )
             if has_voice:
                 prompt = "Listen to the voice message and reply to it."

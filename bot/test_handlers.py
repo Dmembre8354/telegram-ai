@@ -405,6 +405,8 @@ async def test_media_service():
     assert len(parts) == 1
     assert parts[0]["mime_type"] == "audio/ogg"
     assert parts[0]["data"] == b"oggdata"
+    mock_bot.get_file.assert_called_once_with("voice_123")
+    mock_bot.download_file.assert_called_once_with("voice_path")
 
     # 3. Test Text File Document
     doc_text = Document(
@@ -412,6 +414,7 @@ async def test_media_service():
         file_unique_id="d1",
         file_name="test.py",
         mime_type="text/x-python",
+        file_size=100,
     )
     msg_doc_text = Message(
         message_id=6,
@@ -421,12 +424,17 @@ async def test_media_service():
         document=doc_text,
     )
     msg_doc_text._bot = mock_bot
+
+    mock_file_info_text = MagicMock(file_path="doc_text_path")
+    mock_bot.get_file = AsyncMock(return_value=mock_file_info_text)
     mock_bot.download_file = AsyncMock(return_value=io.BytesIO(b"print('hello')"))
 
     text, parts = await MediaService.process_message_media(msg_doc_text)
     assert "=== START OF ATTACHED FILE: test.py ===" in text
     assert "print('hello')" in text
     assert len(parts) == 0  # Should be empty because it was decoded as text
+    mock_bot.get_file.assert_called_with("doc_123")
+    mock_bot.download_file.assert_called_with("doc_text_path")
 
     # 4. Test PDF Document (Binary)
     doc_pdf = Document(
@@ -434,6 +442,7 @@ async def test_media_service():
         file_unique_id="d2",
         file_name="paper.pdf",
         mime_type="application/pdf",
+        file_size=200,
     )
     msg_doc_pdf = Message(
         message_id=7,
@@ -443,6 +452,9 @@ async def test_media_service():
         document=doc_pdf,
     )
     msg_doc_pdf._bot = mock_bot
+
+    mock_file_info_pdf = MagicMock(file_path="doc_pdf_path")
+    mock_bot.get_file = AsyncMock(return_value=mock_file_info_pdf)
     mock_bot.download_file = AsyncMock(return_value=io.BytesIO(b"pdfdata"))
 
     text, parts = await MediaService.process_message_media(msg_doc_pdf)
@@ -450,6 +462,8 @@ async def test_media_service():
     assert len(parts) == 1
     assert parts[0]["mime_type"] == "application/pdf"
     assert parts[0]["data"] == b"pdfdata"
+    mock_bot.get_file.assert_called_with("doc_456")
+    mock_bot.download_file.assert_called_with("doc_pdf_path")
 
     # 5. Test Photo in Album (with media_group_id)
     photo_size = PhotoSize(
@@ -457,6 +471,7 @@ async def test_media_service():
         file_unique_id="p1",
         width=100,
         height=100,
+        file_size=300,
     )
     msg_photo = Message(
         message_id=8,
@@ -467,6 +482,9 @@ async def test_media_service():
         media_group_id="group_123",
     )
     msg_photo._bot = mock_bot
+
+    mock_file_info_photo = MagicMock(file_path="photo_path")
+    mock_bot.get_file = AsyncMock(return_value=mock_file_info_photo)
     mock_bot.download_file = AsyncMock(return_value=io.BytesIO(b"photodata"))
 
     text, parts = await MediaService.process_message_media(msg_photo)
@@ -474,6 +492,31 @@ async def test_media_service():
     assert len(parts) == 1
     assert parts[0]["mime_type"] == "image/jpeg"
     assert parts[0]["data"] == b"photodata"
+    mock_bot.get_file.assert_called_with("photo_123")
+    mock_bot.download_file.assert_called_with("photo_path")
+
+    # 6. Test Document exceeding size limit (> 20MB)
+    doc_large = Document(
+        file_id="doc_large_123",
+        file_unique_id="d3",
+        file_name="large.zip",
+        mime_type="application/zip",
+        file_size=25 * 1024 * 1024,  # 25 MB
+    )
+    msg_doc_large = Message(
+        message_id=9,
+        date=datetime.datetime.now(),
+        chat=Chat(id=123, type="private"),
+        from_user=User(id=999, is_bot=False, first_name="User"),
+        document=doc_large,
+    )
+    msg_doc_large._bot = mock_bot
+
+    mock_bot.get_file.reset_mock()
+    text, parts = await MediaService.process_message_media(msg_doc_large)
+    assert "large.zip was omitted because it exceeds the 20 MB size limit" in text
+    assert len(parts) == 0
+    mock_bot.get_file.assert_not_called()
 
 
 if __name__ == "__main__":

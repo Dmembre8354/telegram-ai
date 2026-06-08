@@ -91,57 +91,76 @@ class MediaService:
         # 3. Audio files
         elif message.audio:
             audio = message.audio
-            file_info = await message.bot.get_file(audio.file_id)
-            file = await message.bot.download_file(file_info.file_path)
-            audio_bytes = file.read()
-            mime_type = audio.mime_type or "audio/mpeg"
-            media_parts.append({"data": audio_bytes, "mime_type": mime_type})
+            if audio.file_size and audio.file_size > 20 * 1024 * 1024:
+                text += f"\n\n[Audio: {audio.title or 'audio'} was omitted because it exceeds the 20 MB size limit.]"
+            else:
+                file_info = await message.bot.get_file(audio.file_id)
+                file = await message.bot.download_file(file_info.file_path)
+                audio_bytes = file.read()
+                mime_type = audio.mime_type or "audio/mpeg"
+                media_parts.append({"data": audio_bytes, "mime_type": mime_type})
 
         # 4. Videos / Video notes
         elif message.video:
             video = message.video
-            file_info = await message.bot.get_file(video.file_id)
-            file = await message.bot.download_file(file_info.file_path)
-            video_bytes = file.read()
-            mime_type = video.mime_type or "video/mp4"
-            media_parts.append({"data": video_bytes, "mime_type": mime_type})
+            if video.file_size and video.file_size > 20 * 1024 * 1024:
+                text += (
+                    "\n\n[Video was omitted because it exceeds the 20 MB size limit.]"
+                )
+            else:
+                file_info = await message.bot.get_file(video.file_id)
+                file = await message.bot.download_file(file_info.file_path)
+                video_bytes = file.read()
+                mime_type = video.mime_type or "video/mp4"
+                media_parts.append({"data": video_bytes, "mime_type": mime_type})
         elif message.video_note:
             video_note = message.video_note
-            file_info = await message.bot.get_file(video_note.file_id)
-            file = await message.bot.download_file(file_info.file_path)
-            video_bytes = file.read()
-            media_parts.append({"data": video_bytes, "mime_type": "video/mp4"})
+            if video_note.file_size and video_note.file_size > 20 * 1024 * 1024:
+                text += "\n\n[Video note was omitted because it exceeds the 20 MB size limit.]"
+            else:
+                file_info = await message.bot.get_file(video_note.file_id)
+                file = await message.bot.download_file(file_info.file_path)
+                video_bytes = file.read()
+                media_parts.append({"data": video_bytes, "mime_type": "video/mp4"})
 
         # 5. Documents / General Files
         elif message.document:
             doc = message.document
-            file_info = await message.bot.get_file(doc.file_id)
-            file = await message.bot.download_file(file_info.file_path)
-            file_bytes = file.read()
-
             filename = doc.file_name or "file"
-            mime_type = (
-                doc.mime_type
-                or mimetypes.guess_type(filename)[0]
-                or "application/octet-stream"
-            )
-
-            # Check if it's a text file we can read directly
-            if cls.is_text_file(filename, mime_type):
-                try:
-                    text_content = file_bytes.decode("utf-8")
-                    # Format text content and append to prompt without using Markdown code fences
-                    file_prompt = (
-                        f"\n\n=== START OF ATTACHED FILE: {filename} ===\n"
-                        f"{text_content}\n"
-                        f"=== END OF ATTACHED FILE: {filename} ==="
-                    )
-                    text += file_prompt
-                except UnicodeDecodeError:
-                    # Fallback to sending as byte part if UTF-8 decode fails
-                    media_parts.append({"data": file_bytes, "mime_type": "text/plain"})
+            if doc.file_size and doc.file_size > 20 * 1024 * 1024:
+                text += f"\n\n[Document: {filename} was omitted because it exceeds the 20 MB size limit.]"
             else:
-                # PDF, image, audio, etc. passed as raw bytes
-                media_parts.append({"data": file_bytes, "mime_type": mime_type})
+                file_info = await message.bot.get_file(doc.file_id)
+                file = await message.bot.download_file(file_info.file_path)
+                file_bytes = file.read()
+
+                mime_type = (
+                    doc.mime_type
+                    or mimetypes.guess_type(filename)[0]
+                    or "application/octet-stream"
+                )
+
+                # Check if it's a text file we can read directly, and it is small enough (< 512 KB) to avoid bloating the prompt
+                if (
+                    cls.is_text_file(filename, mime_type)
+                    and len(file_bytes) <= 512 * 1024
+                ):
+                    try:
+                        text_content = file_bytes.decode("utf-8")
+                        # Format text content and append to prompt without using Markdown code fences
+                        file_prompt = (
+                            f"\n\n=== START OF ATTACHED FILE: {filename} ===\n"
+                            f"{text_content}\n"
+                            f"=== END OF ATTACHED FILE: {filename} ==="
+                        )
+                        text += file_prompt
+                    except UnicodeDecodeError:
+                        # Fallback to sending as byte part if UTF-8 decode fails
+                        media_parts.append(
+                            {"data": file_bytes, "mime_type": "text/plain"}
+                        )
+                else:
+                    # PDF, image, audio, etc. passed as raw bytes
+                    media_parts.append({"data": file_bytes, "mime_type": mime_type})
 
         return text.strip(), media_parts
