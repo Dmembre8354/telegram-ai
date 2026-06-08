@@ -45,7 +45,13 @@ async def _get_bot_info(bot):
     return _bot_id, _bot_username
 
 
-# Buffer for media group albums: media_group_id -> {chat_id, user_id, text, media_parts, message, is_mentioned}
+# Buffer for media group albums: media_group_id -> {
+#   "chat_id": int,
+#   "user_id": int,
+#   "text": str or None,
+#   "messages": list[Message],
+#   "is_mentioned": bool
+# }
 _media_groups: dict[str, dict] = {}
 _media_group_tasks: dict[str, asyncio.Task] = {}
 
@@ -464,10 +470,35 @@ async def _handle_media_group(group_id: str):
     )
 
 
+def _is_only_omissions(prompt: str) -> bool:
+    if not prompt:
+        return True
+    lines = prompt.strip().split("\n")
+    for line in lines:
+        line_stripped = line.strip()
+        if not line_stripped:
+            continue
+        is_omission = (
+            line_stripped.startswith("[")
+            and "omitted because it exceeds" in line_stripped
+            and line_stripped.endswith("]")
+        )
+        if not is_omission:
+            return False
+    return True
+
+
 async def _process_message(
     chat_id: int, user_id: int, text, media_parts: list, message: Message
 ):
     if not text and not media_parts:
+        return
+
+    # Check if all media was omitted and no user text/caption was provided
+    if not media_parts and _is_only_omissions(text):
+        is_group = message.chat.type in ("group", "supergroup")
+        send_msg = message.reply if is_group else message.answer
+        await send_msg(text.strip())
         return
 
     prompt = text or ""
@@ -510,7 +541,7 @@ async def _process_message(
     if media_parts:
         processing_msg = await send_msg("Thinking...")
         if not prompt:
-            has_voice = any(
+            has_audio = any(
                 isinstance(p, dict) and p.get("mime_type", "").startswith("audio/")
                 for p in media_parts
             )
@@ -518,7 +549,7 @@ async def _process_message(
                 isinstance(p, dict) and p.get("mime_type", "").startswith("image/")
                 for p in media_parts
             )
-            if has_voice:
+            if has_audio:
                 prompt = "Listen to the audio and reply to it."
             elif has_image:
                 prompt = "Describe the images."

@@ -61,6 +61,9 @@ async def run_tests():
     # 7. Test quota logic
     await test_quota_logic()
 
+    # 7b. Test omissions short-circuiting
+    await test_omissions_short_circuit()
+
     # 8. Test Media Service
     await test_media_service()
 
@@ -368,6 +371,39 @@ async def test_quota_logic():
         config.IS_ADSGRAM_ACTIVE = old_adsgram_active
 
 
+async def test_omissions_short_circuit():
+    from unittest.mock import AsyncMock, patch
+    from aiogram.types import Chat, User, Message
+    import handlers
+    import datetime
+
+    chat = Chat(id=123, type="private")
+    user = User(id=999, is_bot=False, first_name="User")
+    message = Message(
+        message_id=1,
+        date=datetime.datetime.now(),
+        chat=chat,
+        from_user=user,
+        text="Thinking...",
+    )
+
+    mock_answer = AsyncMock()
+    object.__setattr__(message, "answer", mock_answer)
+
+    patch_quota = patch("handlers.check_and_consume_quota", new_callable=AsyncMock)
+    patch_generate = patch("handlers.generate_llm_response", new_callable=AsyncMock)
+
+    with patch_quota as mock_quota, patch_generate as mock_generate:
+        omission_text = (
+            "[Document: file.zip was omitted because it exceeds the 20 MB size limit.]"
+        )
+        await handlers._process_message(123, 999, omission_text, [], message)
+
+        mock_quota.assert_not_called()
+        mock_generate.assert_not_called()
+        mock_answer.assert_called_once_with(omission_text)
+
+
 async def test_media_service():
     from media_service import MediaService
     from aiogram.types import Message, Voice, PhotoSize, Document, Chat, User
@@ -381,10 +417,8 @@ async def test_media_service():
     assert MediaService.is_text_file("image.png", "image/png") is False
     assert MediaService.is_text_file("doc.pdf", "application/pdf") is False
 
-    # Mock Message
-    mock_bot = AsyncMock()
-
     # 2. Test Voice message
+    mock_bot = AsyncMock()
     voice = Voice(
         file_id="voice_123", duration=5, file_unique_id="v1", mime_type="audio/ogg"
     )
@@ -409,6 +443,7 @@ async def test_media_service():
     mock_bot.download_file.assert_called_once_with("voice_path")
 
     # 3. Test Text File Document
+    mock_bot = AsyncMock()
     doc_text = Document(
         file_id="doc_123",
         file_unique_id="d1",
@@ -434,10 +469,11 @@ async def test_media_service():
     assert "=== START OF ATTACHED FILE: test.py ===" in text
     assert "print('hello')" in text
     assert len(parts) == 0  # Should be empty because it was decoded as text
-    mock_bot.get_file.assert_called_with("doc_123")
-    mock_bot.download_file.assert_called_with("doc_text_path")
+    mock_bot.get_file.assert_called_once_with("doc_123")
+    mock_bot.download_file.assert_called_once_with("doc_text_path")
 
     # 4. Test PDF Document (Binary)
+    mock_bot = AsyncMock()
     doc_pdf = Document(
         file_id="doc_456",
         file_unique_id="d2",
@@ -463,10 +499,11 @@ async def test_media_service():
     assert len(parts) == 1
     assert parts[0]["mime_type"] == "application/pdf"
     assert parts[0]["data"] == b"pdfdata"
-    mock_bot.get_file.assert_called_with("doc_456")
-    mock_bot.download_file.assert_called_with("doc_pdf_path")
+    mock_bot.get_file.assert_called_once_with("doc_456")
+    mock_bot.download_file.assert_called_once_with("doc_pdf_path")
 
     # 5. Test Photo in Album (with media_group_id)
+    mock_bot = AsyncMock()
     photo_size = PhotoSize(
         file_id="photo_123",
         file_unique_id="p1",
@@ -493,10 +530,11 @@ async def test_media_service():
     assert len(parts) == 1
     assert parts[0]["mime_type"] == "image/jpeg"
     assert parts[0]["data"] == b"photodata"
-    mock_bot.get_file.assert_called_with("photo_123")
-    mock_bot.download_file.assert_called_with("photo_path")
+    mock_bot.get_file.assert_called_once_with("photo_123")
+    mock_bot.download_file.assert_called_once_with("photo_path")
 
     # 6. Test Document exceeding size limit (> 20MB)
+    mock_bot = AsyncMock()
     doc_large = Document(
         file_id="doc_large_123",
         file_unique_id="d3",
@@ -513,13 +551,13 @@ async def test_media_service():
     )
     msg_doc_large._bot = mock_bot
 
-    mock_bot.get_file.reset_mock()
     text, parts = await MediaService.process_message_media(msg_doc_large)
     assert "large.zip was omitted because it exceeds the 20 MB size limit" in text
     assert len(parts) == 0
     mock_bot.get_file.assert_not_called()
 
     # 7. Test Voice exceeding size limit (> 20MB)
+    mock_bot = AsyncMock()
     voice_large = Voice(
         file_id="voice_large_123",
         duration=5,
@@ -536,13 +574,13 @@ async def test_media_service():
     )
     msg_voice_large._bot = mock_bot
 
-    mock_bot.get_file.reset_mock()
     text, parts = await MediaService.process_message_media(msg_voice_large)
     assert "Voice note was omitted because it exceeds the 20 MB size limit" in text
     assert len(parts) == 0
     mock_bot.get_file.assert_not_called()
 
     # 8. Test Photo exceeding size limit (> 20MB)
+    mock_bot = AsyncMock()
     photo_large = PhotoSize(
         file_id="photo_large_123",
         file_unique_id="pl1",
@@ -559,13 +597,13 @@ async def test_media_service():
     )
     msg_photo_large._bot = mock_bot
 
-    mock_bot.get_file.reset_mock()
     text, parts = await MediaService.process_message_media(msg_photo_large)
     assert "Photo was omitted because it exceeds the 20 MB size limit" in text
     assert len(parts) == 0
     mock_bot.get_file.assert_not_called()
 
     # 9. Test Text decode failure fallback preserves original MIME type
+    mock_bot = AsyncMock()
     doc_broken_text = Document(
         file_id="doc_broken_123",
         file_unique_id="d4",
@@ -592,6 +630,8 @@ async def test_media_service():
     assert len(parts) == 1
     assert parts[0]["mime_type"] == "text/x-python"
     assert parts[0]["data"] == b"\xff\xfe\x00\x00"
+    mock_bot.get_file.assert_called_once_with("doc_broken_123")
+    mock_bot.download_file.assert_called_once_with("broken_path")
 
 
 if __name__ == "__main__":

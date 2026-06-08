@@ -45,7 +45,7 @@ For media group albums (multiple photos/documents sent together), the bot router
 ### Injected Prompts for Media
 
 If the user sends media without a caption, the system dynamically appends a default instruction to prompt the LLM correctly:
-* **Audio/Voice messages**: `Listen to the audio and reply to it.`
+* **Audio files / Voice messages**: `Listen to the audio and reply to it.`
 * **Images**: `Describe the images.`
 * **Files/Documents**: `Process the attached files.`
 
