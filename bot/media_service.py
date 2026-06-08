@@ -80,8 +80,8 @@ class MediaService:
             mime_type = voice.mime_type or "audio/ogg"
             media_parts.append({"data": voice_bytes, "mime_type": mime_type})
 
-        # 2. Photos (Single photo - media groups are processed separately)
-        elif message.photo and not message.media_group_id:
+        # 2. Photos
+        elif message.photo:
             photo = message.photo[-1]
             file_info = await message.bot.get_file(photo.file_id)
             file = await message.bot.download_file(file_info.file_path)
@@ -130,9 +130,11 @@ class MediaService:
             if cls.is_text_file(filename, mime_type):
                 try:
                     text_content = file_bytes.decode("utf-8")
-                    # Format text content and append to prompt
+                    # Format text content and append to prompt without using Markdown code fences
                     file_prompt = (
-                        f"\n\n[Attached File: {filename}]\n```\n{text_content}\n```"
+                        f"\n\n=== START OF ATTACHED FILE: {filename} ===\n"
+                        f"{text_content}\n"
+                        f"=== END OF ATTACHED FILE: {filename} ==="
                     )
                     text += file_prompt
                 except UnicodeDecodeError:

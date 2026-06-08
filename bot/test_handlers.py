@@ -424,7 +424,7 @@ async def test_media_service():
     mock_bot.download_file = AsyncMock(return_value=io.BytesIO(b"print('hello')"))
 
     text, parts = await MediaService.process_message_media(msg_doc_text)
-    assert "[Attached File: test.py]" in text
+    assert "=== START OF ATTACHED FILE: test.py ===" in text
     assert "print('hello')" in text
     assert len(parts) == 0  # Should be empty because it was decoded as text
 
@@ -450,6 +450,30 @@ async def test_media_service():
     assert len(parts) == 1
     assert parts[0]["mime_type"] == "application/pdf"
     assert parts[0]["data"] == b"pdfdata"
+
+    # 5. Test Photo in Album (with media_group_id)
+    photo_size = PhotoSize(
+        file_id="photo_123",
+        file_unique_id="p1",
+        width=100,
+        height=100,
+    )
+    msg_photo = Message(
+        message_id=8,
+        date=datetime.datetime.now(),
+        chat=Chat(id=123, type="private"),
+        from_user=User(id=999, is_bot=False, first_name="User"),
+        photo=[photo_size],
+        media_group_id="group_123"
+    )
+    msg_photo._bot = mock_bot
+    mock_bot.download_file = AsyncMock(return_value=io.BytesIO(b"photodata"))
+
+    text, parts = await MediaService.process_message_media(msg_photo)
+    assert text == ""
+    assert len(parts) == 1
+    assert parts[0]["mime_type"] == "image/jpeg"
+    assert parts[0]["data"] == b"photodata"
 
 
 if __name__ == "__main__":
