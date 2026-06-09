@@ -22,6 +22,7 @@ from db import (
     get_history,
     add_message,
     clear_history,
+    add_reward_quota,
 )
 from llm import generate_llm_response, summarize_history
 from media_service import MediaService
@@ -203,16 +204,20 @@ async def process_watch_ad_callback(callback: CallbackQuery, bot: Bot):
                 body = await resp.text()
                 if not body or not body.strip():
                     logging.warning("Adsgram API returned empty response — no ads available")
+                    await add_reward_quota(user_id, 2)
                     await callback.message.answer(
-                        "⚠️ No ads available at the moment. Please try again later."
+                        "😔 No ads available right now, but we've added <b>2 free requests</b> to your balance!",
+                        parse_mode="HTML",
                     )
                     return
                 try:
                     data = json.loads(body)
                 except json.JSONDecodeError:
                     logging.error(f"Adsgram API returned invalid JSON: {body[:200]}")
+                    await add_reward_quota(user_id, 2)
                     await callback.message.answer(
-                        "⚠️ No ads available at the moment. Please try again later."
+                        "😔 No ads available right now, but we've added <b>2 free requests</b> to your balance!",
+                        parse_mode="HTML",
                     )
                     return
     except Exception as e:
@@ -225,8 +230,10 @@ async def process_watch_ad_callback(callback: CallbackQuery, bot: Bot):
     # Check if we have ad data
     text_html = data.get("text_html")
     if not text_html:
+        await add_reward_quota(user_id, 2)
         await callback.message.answer(
-            "⚠️ No ads available at the moment. Please try again later."
+            "😔 No ads available right now, but we've added <b>2 free requests</b> to your balance!",
+            parse_mode="HTML",
         )
         return
 
