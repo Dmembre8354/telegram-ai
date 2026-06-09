@@ -188,6 +188,7 @@ async def process_watch_ad_callback(callback: CallbackQuery, bot: Bot):
     }
 
     import aiohttp
+    import json
     import logging
 
     try:
@@ -199,7 +200,21 @@ async def process_watch_ad_callback(callback: CallbackQuery, bot: Bot):
                         "⚠️ Failed to load advertisement. Please try again later."
                     )
                     return
-                data = await resp.json(content_type=None)
+                body = await resp.text()
+                if not body or not body.strip():
+                    logging.warning("Adsgram API returned empty response — no ads available")
+                    await callback.message.answer(
+                        "⚠️ No ads available at the moment. Please try again later."
+                    )
+                    return
+                try:
+                    data = json.loads(body)
+                except json.JSONDecodeError:
+                    logging.error(f"Adsgram API returned invalid JSON: {body[:200]}")
+                    await callback.message.answer(
+                        "⚠️ No ads available at the moment. Please try again later."
+                    )
+                    return
     except Exception as e:
         logging.error(f"Error fetching ad from Adsgram: {e}")
         await callback.message.answer(
